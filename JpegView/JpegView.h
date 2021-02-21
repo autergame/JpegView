@@ -1,6 +1,9 @@
+#pragma once
 #define _CRT_SECURE_NO_WARNINGS
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image.h"
+#include "stb_image_write.h"
 #pragma comment(lib, "opengl32")
 #include "libs/glad/glad.h"
 #include "libs/imgui/imgui.h"
@@ -12,14 +15,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <ctype.h>
-
-void _assert(char const* msg, char const* file, unsigned line)
-{
-    printf("ERROR: %s %s %d\n", msg, file, line);
-    scanf("press enter to exit.");
-    exit(1);
-}
-#define myassert(expression) if (expression) { _assert(#expression, __FILE__, __LINE__); }
+#include <vector>
+#include <windows.h>
 
 void cleanarray(int** arrayi, int height)
 {
@@ -50,10 +47,12 @@ typedef struct JpegView
     PImage* original;
     uint8_t* finalimage;
     float** DCTCosTable;
+    int width, height;
     int** red, **green, **blue;
-    int width, height, channels;
     int mwidth, mheight, blockSize;
 } JpegView;
+
+#include "QuadTree.h"
 
 void zoomlayer(GLuint image_texture, JpegView* jpeg, float width, float height, float zoom)
 {
@@ -77,7 +76,7 @@ void zoomlayer(GLuint image_texture, JpegView* jpeg, float width, float height, 
     }
 }
 
-GLuint createimage(uint8_t* image, int width, int height, int channels)
+GLuint createimage(uint8_t* image, int width, int height)
 {
     GLuint image_texture;
     glGenTextures(1, &image_texture);
@@ -87,10 +86,7 @@ GLuint createimage(uint8_t* image, int width, int height, int channels)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-    if (channels == 4)
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, image);
-    else
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, image);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, image);
     return image_texture;
 }
 
@@ -233,7 +229,7 @@ int** toIntMatrix(PImage* original, int colorSpace, JpegView* jpeg)
             {
                 for (int x = 0; x < original->width; x++)
                 {
-                    result[y][x] = (int)(original->image[(original->width * jpeg->channels * y + x * jpeg->channels) + 0]);
+                    result[y][x] = (int)(original->image[(original->width * y + x) * 3 + 0]);
                 }
             }
             break;
@@ -244,7 +240,7 @@ int** toIntMatrix(PImage* original, int colorSpace, JpegView* jpeg)
             {
                 for (int x = 0; x < original->width; x++)
                 {
-                    result[y][x] = (int)(original->image[(original->width * jpeg->channels * y + x * jpeg->channels) + 1]);
+                    result[y][x] = (int)(original->image[(original->width * y + x) * 3 + 1]);
                 }
             }
             break;
@@ -255,7 +251,7 @@ int** toIntMatrix(PImage* original, int colorSpace, JpegView* jpeg)
             {
                 for (int x = 0; x < original->width; x++)
                 {
-                    result[y][x] = (int)(original->image[(original->width * jpeg->channels * y + x * jpeg->channels) + 2]);
+                    result[y][x] = (int)(original->image[(original->width * y + x) * 3 + 2]);
                 }
             }
             break;
@@ -280,31 +276,14 @@ int** toIntMatrix(PImage* original, int colorSpace, JpegView* jpeg)
 
 uint8_t* matrixToPImage(int** red, int** green, int** blue, JpegView* jpeg)
 {
-    uint8_t* result = (uint8_t*)calloc(jpeg->width*jpeg->height*jpeg->channels, 1);
-    if (jpeg->channels == 4)
+    uint8_t* result = (uint8_t*)calloc(jpeg->width*jpeg->height*3, 1);
+    for (int y = 0; y < jpeg->height; y++)
     {
-        for (int y = 0; y < jpeg->height; y++)
+        for (int x = 0; x < jpeg->width; x++)
         {
-            for (int x = 0; x < jpeg->width; x++)
-            {
-                result[(jpeg->width * 4 * y + x * 4) + 0] = processingfix(red[y][x]);
-                result[(jpeg->width * 4 * y + x * 4) + 1] = processingfix(green[y][x]);
-                result[(jpeg->width * 4 * y + x * 4) + 2] = processingfix(blue[y][x]);
-                result[(jpeg->width * 4 * y + x * 4) + 3] =
-                    jpeg->original->image[(jpeg->width * 4 * y + x * 4) + 3];
-            }
-        }
-    }
-    else
-    {
-        for (int y = 0; y < jpeg->height; y++)
-        {
-            for (int x = 0; x < jpeg->width; x++)
-            {
-                result[(jpeg->width * 3 * y + x * 3) + 0] = processingfix(red[y][x]);
-                result[(jpeg->width * 3 * y + x * 3) + 1] = processingfix(green[y][x]);
-                result[(jpeg->width * 3 * y + x * 3) + 2] = processingfix(blue[y][x]);
-            }
+            result[(jpeg->width * y + x) * 3 + 0] = processingfix(red[y][x]);
+            result[(jpeg->width * y + x) * 3 + 1] = processingfix(green[y][x]);
+            result[(jpeg->width * y + x) * 3 + 2] = processingfix(blue[y][x]);
         }
     }
     return result;
@@ -314,6 +293,7 @@ void compress(JpegView* jpeg, int factor)
 {
     if (jpeg->finalimage)
         free(jpeg->finalimage);
+    factor = 200 - factor * 2;
     int** quantizationMatrix = generateQMatrix(jpeg->blockSize, factor);
     int** compRed = reverseDCT(quantize(DCT(jpeg->red, jpeg), quantizationMatrix, jpeg), jpeg);
     int** compGreen = reverseDCT(quantize(DCT(jpeg->green, jpeg), quantizationMatrix, jpeg), jpeg);
@@ -339,16 +319,13 @@ void changeblock(JpegView* jpeg, int block)
     jpeg->DCTCosTable = generateDCTtable(jpeg->blockSize);
 }
 
-JpegView* init(uint8_t* original, int width, int height, int channels, int factor)
+JpegView* initjpeg(uint8_t* original, int width, int height, int factor)
 {
     JpegView* jpeg = (JpegView*)calloc(1, sizeof(JpegView));
-    myassert(jpeg == NULL);
     jpeg->width = width;
     jpeg->height = height;
-    jpeg->channels = channels;
     jpeg->blockSize = 8;
     PImage* originalp = (PImage*)calloc(1, sizeof(PImage));
-    myassert(originalp == NULL);
     originalp->width = width;
     originalp->height = height;
     originalp->image = original;
@@ -359,6 +336,14 @@ JpegView* init(uint8_t* original, int width, int height, int channels, int facto
     jpeg->green = toIntMatrix(originalp, 1, jpeg);
     jpeg->blue = toIntMatrix(originalp, 2, jpeg);
     jpeg->DCTCosTable = generateDCTtable(jpeg->blockSize);
-    compress(jpeg, factor);
     return jpeg;
+}
+
+void renderjpeg(JpegView* jpeg, int blockn, int value, GLuint image_texturef)
+{
+    if (jpeg->blockSize != blockn)
+        changeblock(jpeg, blockn);
+    compress(jpeg, value);
+    glBindTexture(GL_TEXTURE_2D, image_texturef);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, jpeg->width, jpeg->height, GL_RGB, GL_UNSIGNED_BYTE, jpeg->finalimage);
 }

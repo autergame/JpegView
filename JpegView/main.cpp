@@ -1,8 +1,6 @@
+#pragma once
 //author https://github.com/autergame
 #include "JpegView.h"
-#include <windows.h>
-#include "stb_image.h"
-#include "stb_image_write.h"
 
 typedef HGLRC WINAPI wglCreateContextAttribsARB_type(HDC hdc, HGLRC hShareContext,
 	const int* attribList);
@@ -292,6 +290,7 @@ int main()
 	colors[ImGuiCol_MenuBarBg] = ImVec4(0.2f, 0.2f, 0.2f, 1.f);
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.f);
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 2.f);
+	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(GImGui->Style.ItemSpacing.x, GImGui->Style.ItemSpacing.x));
 	ImGui::GetIO().Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\consola.ttf", 13);
 	int FULL_SCREEN_FLAGS = ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
 		ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_MenuBar;
@@ -299,15 +298,20 @@ int main()
 	MSG msg = { 0 };
 	float zoomv = 2.f;
 	char tmp[64] = { 0 };
+	bool jpegcode = true;
+	bool drawline = false;
+	bool quadtree = false;
 	JpegView* jpeg = NULL;
 	GLuint image_textureo;
 	GLuint image_texturef;
-	int value = 25, blockn;
+	int value = 90, blockn = 8;
+	int depth = 10, error = 5;
 	ShowWindow(window, TRUE);
 	UpdateWindow(window);
 	HDC gldc = GetDC(window);
 	char openfile[260] = { 0 };
 	char savefile[260] = { 0 };
+	struct quadnode* root = NULL;
 	int swidth, sheight, schannels;
 	float Deltatime = 0, Lastedtime = 0;
 	while (active)
@@ -325,7 +329,7 @@ int main()
 		Deltatime = float(GetTimeSinceStart() - Lastedtime);
 		Lastedtime = (float)GetTimeSinceStart();
 
-		myassert(sprintf(tmp, "JpegView - FPS: %1.0f", 1 / Deltatime) < 0);
+		sprintf(tmp, "JpegView - FPS: %1.0f", 1 / Deltatime);
 		SetWindowTextA(window, tmp);
 
 		glClear(GL_COLOR_BUFFER_BIT);
@@ -364,13 +368,13 @@ int main()
 							free(jpeg->finalimage);
 						}
 					}
-					uint8_t* img = stbi_load(openfile, &swidth, &sheight, &schannels, 0);
+					uint8_t* img = stbi_load(openfile, &swidth, &sheight, &schannels, 3);
 					if (img != NULL)
 					{
-						jpeg = init(img, swidth, sheight, schannels, value);
-						image_textureo = createimage(img, swidth, sheight, schannels);
-						image_texturef = createimage(jpeg->finalimage, swidth, sheight, schannels);
-						blockn = jpeg->blockSize;
+						jpeg = initjpeg(img, swidth, sheight, value);
+						root = initquad(img, swidth, 0, 0, swidth, sheight, 0);
+						image_textureo = createimage(img, swidth, sheight);
+						image_texturef = createimage(img, swidth, sheight);
 					}
 					else
 						printf("Error in loading the image\n");
@@ -395,7 +399,7 @@ int main()
 					ofn.Flags = OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
 					if (GetSaveFileNameA(&ofn) == TRUE)
 					{
-						stbi_write_png(savefile, jpeg->width, jpeg->height, schannels, jpeg->finalimage, 0);
+						stbi_write_png(savefile, jpeg->width, jpeg->height, 3, jpeg->finalimage, 0);
 					}
 				}
 			}
@@ -404,29 +408,37 @@ int main()
 		if (openfile[0] != 0 && jpeg != NULL)
 		{
 			ImGui::AlignTextToFramePadding();
+			if (quadtree) jpegcode = false;
+			ImGui::Checkbox("Use Jpeg?", &jpegcode); ImGui::SameLine();
 			ImGui::Text("Factor:"); ImGui::SameLine();
 			ImGui::InputInt("##inputf", &value); ImGui::SameLine();
 			ImGui::Text("Block Size:"); ImGui::SameLine();
-			ImGui::InputInt("##inputb", &blockn); ImGui::SameLine();
+			ImGui::InputInt("##inputb", &blockn);
+			ImGui::AlignTextToFramePadding();
+			if (jpegcode) quadtree = false;
+			ImGui::Checkbox("Use QuadTree?", &quadtree); ImGui::SameLine();
+			ImGui::Text("Max Depth:"); ImGui::SameLine();
+			ImGui::InputInt("##inputd", &depth); ImGui::SameLine();
+			ImGui::Text("Max Error:"); ImGui::SameLine();
+			ImGui::InputInt("##inpute", &error); ImGui::SameLine();
+			ImGui::Checkbox("Draw Line Quad?", &drawline);
+			ImGui::AlignTextToFramePadding();
 			ImGui::Text("Zoom:"); ImGui::SameLine();
 			ImGui::InputFloat("##inputz", &zoomv, 1, 100, "%g"); ImGui::SameLine();
 			if (ImGui::Button("Compress"))
 			{
-				if (jpeg->blockSize != blockn)
-					changeblock(jpeg, blockn);
-				compress(jpeg, value);
-				glBindTexture(GL_TEXTURE_2D, image_texturef);
-				glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, jpeg->width, jpeg->height,
-					schannels == 4 ? GL_RGBA : GL_RGB, GL_UNSIGNED_BYTE, jpeg->finalimage);
+				if (quadtree)
+					renderquad(jpeg, root, depth, error, swidth, sheight, drawline, image_texturef);
+				if (jpegcode)
+					renderjpeg(jpeg, blockn, value, image_texturef);
 			}
-			if (zoomv < 1.f)
-				zoomv = 1.f;
-			float newwidth = ImGui::GetWindowContentRegionMax().x / 2;
+			if (zoomv < 1.f) zoomv = 1.f;
+			float newwidth = ImGui::GetContentRegionAvail().x / 2;
 			float newheight = ((float)jpeg->height / (float)jpeg->width) * newwidth;
 			ImGui::Image((void*)(intptr_t)image_textureo, ImVec2(newwidth, newheight));
-			zoomlayer(image_textureo, jpeg, newwidth, newheight, zoomv); ImGui::SameLine(); 
-			ImGui::Image((void*)(intptr_t)image_texturef, ImVec2(newwidth, newheight));
-			zoomlayer(image_texturef, jpeg, newwidth, newheight, zoomv);
+			zoomlayer(image_textureo, jpeg, newwidth, newheight, zoomv); ImGui::SameLine();
+			ImGui::Image((void*)(intptr_t)image_texturef, ImVec2(newwidth - GImGui->Style.ItemSpacing.x, newheight));
+			zoomlayer(image_texturef, jpeg, newwidth - GImGui->Style.ItemSpacing.x, newheight, zoomv);
 		}
 
 		ImGui::End();

@@ -1,4 +1,4 @@
 # JpegView
-Jpeg Jpg, How To DCT Works Viewer
+How To Jpeg DCT and QuadTree Compression Works
 
-Help From: https://github.com/yacinemezaguer/JPEGVis and https://github.com/ocornut/imgui for gui
+Help From: https://github.com/yacinemezaguer/JPEGVis, https://github.com/TannerYork/Region-Quadtree and https://github.com/ocornut/imgui for gui
