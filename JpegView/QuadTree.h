@@ -1,7 +1,9 @@
+//author https://github.com/autergame
 #pragma once
 
-void weighted_average(int* hist, int& value, float& error)
+float weighted_average(int* hist, int& value)
 {
+	float error = 0.f;
 	int total = 0;
 	for (int i = 0; i < 256; i++)
 		total += hist[i];
@@ -15,14 +17,14 @@ void weighted_average(int* hist, int& value, float& error)
 		error /= total;
 		error = powf(error, 0.5f);
 	}
+	return error;
 }
 
 float color_from_histogram(int* histr, int* histg, int* histb, int& r, int& g, int& b)
 {
-	float re = 0, ge = 0, be = 0;
-	weighted_average(histr, r, re);
-	weighted_average(histg, g, ge);
-	weighted_average(histb, b, be);
+	float re = weighted_average(histr, r);
+	float ge = weighted_average(histg, g);
+	float be = weighted_average(histb, b);
 	return re * 0.2989f + ge * 0.5870f + be * 0.1140f;
 }
 
@@ -32,21 +34,23 @@ struct quadnode
 	uint8_t* image;
 	bool leaf = false;
 	int depth, boxl, boxt, boxr, boxb, r, g, b;
-	struct quadnode* childrentl, * childrentr, * childrenbl, * childrenbr;
+    struct quadnode* childrentl, * childrentr, * childrenbl, * childrenbr;
 };
 
-struct quadnode* initquad(uint8_t* image, int width, int boxl, int boxt, int boxr, int boxb, int depth)
+quadnode* initquad(uint8_t* image, int width, int boxl, int boxt, int boxr, int boxb, int depth)
 {
-	struct quadnode* newquad = (struct quadnode*)calloc(1, sizeof(struct quadnode));
+	quadnode* newquad = new quadnode{};
 	newquad->boxl = boxl;
 	newquad->boxt = boxt;
 	newquad->boxr = boxr;
 	newquad->boxb = boxb;
 	newquad->depth = depth;
 	newquad->image = image;
-	int* histr = (int*)calloc(256, sizeof(int));
-	int* histg = (int*)calloc(256, sizeof(int));
-	int* histb = (int*)calloc(256, sizeof(int));
+
+	int* histr = new int[256]{};
+	int* histg = new int[256]{};
+	int* histb = new int[256]{};
+
 	for (int y = boxt; y < boxb; y++)
 	{
 		for (int x = boxl; x < boxr; x++)
@@ -57,12 +61,17 @@ struct quadnode* initquad(uint8_t* image, int width, int boxl, int boxt, int box
 			histb[image[index + 2]] += 1;
 		}
 	}
+
 	newquad->error = color_from_histogram(histr, histg, histb, newquad->r, newquad->g, newquad->b);
-	free(histr); free(histg); free(histb);
+
+	delete histr; 
+	delete histg;
+	delete histb;
+
 	return newquad;
 }
 
-void build_tree(struct quadnode* node, int width, int max_depth, int errormax, int& max_depthe)
+void build_tree(quadnode* node, int width, int max_depth, int errormax, int& max_depthe)
 {
 	if ((node->depth >= max_depth) || (node->error <= errormax))
 	{
@@ -71,32 +80,34 @@ void build_tree(struct quadnode* node, int width, int max_depth, int errormax, i
 		node->leaf = true;
 		return;
 	}
+
 	int lr = node->boxl + (node->boxr - node->boxl) / 2;
 	int tb = node->boxt + (node->boxb - node->boxt) / 2;
+
 	node->childrentl = initquad(node->image, width, node->boxl, node->boxt, lr, tb, node->depth + 1);
 	node->childrentr = initquad(node->image, width, lr, node->boxt, node->boxr, tb, node->depth + 1);
 	node->childrenbl = initquad(node->image, width, node->boxl, tb, lr, node->boxb, node->depth + 1);
 	node->childrenbr = initquad(node->image, width, lr, tb, node->boxr, node->boxb, node->depth + 1);
+
 	build_tree(node->childrentl, width, max_depth, errormax, max_depthe);
 	build_tree(node->childrentr, width, max_depth, errormax, max_depthe);
 	build_tree(node->childrenbl, width, max_depth, errormax, max_depthe);
 	build_tree(node->childrenbr, width, max_depth, errormax, max_depthe);
 }
 
-void get_leaf_nodes_recusion(struct quadnode* node, std::vector<struct quadnode*>& list)
+void get_leaf_nodes_recusion(quadnode* node, std::vector<quadnode*>& list)
 {
-	if (node->leaf == true)
-		list.push_back(node);
-	else
+	if (node)
 	{
-		if (node->childrentl != NULL)
+		if (node->leaf == true)
+			list.push_back(node);
+		else
+		{
 			get_leaf_nodes_recusion(node->childrentl, list);
-		if (node->childrentr != NULL)
 			get_leaf_nodes_recusion(node->childrentr, list);
-		if (node->childrenbl != NULL)
 			get_leaf_nodes_recusion(node->childrenbl, list);
-		if (node->childrenbr != NULL)
 			get_leaf_nodes_recusion(node->childrenbr, list);
+		}
 	}
 }
 
@@ -104,8 +115,10 @@ void DrawLine(int x1, int y1, int x2, int y2, uint8_t* image, int width, int hei
 {
 	if (x2 - x1 == 0)
 	{
-		if (y2 < y1) std::swap(y1, y2);
-		if (x1 >= width) x1 = width - 1;
+		if (y2 < y1) 
+			std::swap(y1, y2);
+		if (x1 >= width) 
+			x1 = width - 1;
 		for (int y = y1; y < y2; y++)
 		{
 			int index = (y * width + x1) * 3;
@@ -117,8 +130,10 @@ void DrawLine(int x1, int y1, int x2, int y2, uint8_t* image, int width, int hei
 	}
 	if (y2 - y1 == 0)
 	{
-		if (x2 < x1) std::swap(x1, x2);
-		if (y1 >= height) y1 = height - 1;
+		if (x2 < x1) 
+			std::swap(x1, x2);
+		if (y1 >= height)
+			y1 = height - 1;
 		for (int x = x1; x < x2; x++)
 		{
 			int index = (y1 * width + x) * 3;
@@ -130,46 +145,48 @@ void DrawLine(int x1, int y1, int x2, int y2, uint8_t* image, int width, int hei
 	}
 }
 
-void cleanroot(struct quadnode* root)
+void cleanroot(quadnode* root)
 {
-	if (root->childrenbl)
+	if (root)
 	{
-		if (root->childrenbl->leaf)
+		if (root->childrenbl)
+		{
 			cleanroot(root->childrenbl);
-		free(root->childrenbl);
-	}
-	if (root->childrenbr)
-	{
-		if (root->childrenbr->leaf)
+			delete root->childrenbl;
+		}
+		if (root->childrenbr)
+		{
 			cleanroot(root->childrenbr);
-		free(root->childrenbr);
-	}
-	if (root->childrentl)
-	{
-		if (root->childrentl->leaf)
+			delete root->childrenbr;
+		}
+		if (root->childrentl)
+		{
 			cleanroot(root->childrentl);
-		free(root->childrentl);
-	}
-	if (root->childrentr)
-	{
-		if (root->childrentr->leaf)
+			delete root->childrentl;
+		}
+		if (root->childrentr)
+		{
 			cleanroot(root->childrentr);
-		free(root->childrentr);
+			delete root->childrentr;
+		}
 	}
 }
 
-void renderquad(JpegView* jpeg, struct quadnode* root, int depth, int error, int width, int height, bool drawline, GLuint image_texturef)
+void renderquad(JpegView* jpeg, quadnode* root, int depth, int error, int width, int height, bool drawline, GLuint image_texturef)
 {
 	if (jpeg->finalimage)
-		free(jpeg->finalimage);
+		delete jpeg->finalimage;
+
 	int max_depthe = 0;
 	build_tree(root, width, depth, error, max_depthe);
-	std::vector<struct quadnode*> list;
+
+	std::vector<quadnode*> list;
 	get_leaf_nodes_recusion(root, list);
-	jpeg->finalimage = (uint8_t*)calloc(width * height, 3);
+
+	jpeg->finalimage = new uint8_t[width * height * 3]{};
 	for (size_t i = 0; i < list.size(); i++)
 	{
-		struct quadnode* quad = list[i];
+		quadnode* quad = list[i];
 		for (int y = quad->boxt; y < quad->boxb; y++)
 		{
 			for (int x = quad->boxl; x < quad->boxr; x++)
@@ -186,8 +203,8 @@ void renderquad(JpegView* jpeg, struct quadnode* root, int depth, int error, int
 	{
 		for (size_t i = 0; i < list.size(); i++)
 		{
-			struct quadnode* quad = list[i];
-			if ((quad->boxr - quad->boxl) >= 2 && (quad->boxb - quad->boxt) >= 2)
+			quadnode* quad = list[i];
+			if ((quad->boxr - quad->boxl) >= 3 && (quad->boxb - quad->boxt) >= 3)
 			{
 				DrawLine(quad->boxl, quad->boxt, quad->boxr, quad->boxt, jpeg->finalimage, width, height);
 				DrawLine(quad->boxl, quad->boxb, quad->boxr, quad->boxb, jpeg->finalimage, width, height);
@@ -199,9 +216,6 @@ void renderquad(JpegView* jpeg, struct quadnode* root, int depth, int error, int
 
 	glBindTexture(GL_TEXTURE_2D, image_texturef);
 	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, jpeg->finalimage);
-	cleanroot(root->childrenbl);
-	cleanroot(root->childrenbr);
-	cleanroot(root->childrentl);
-	cleanroot(root->childrentr);
-	list.clear();
+
+	cleanroot(root);
 }
