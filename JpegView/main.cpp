@@ -66,11 +66,12 @@ int main()
 	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(GImGui->Style.ItemSpacing.x, GImGui->Style.ItemSpacing.x));
 	ImGui::GetIO().Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\consola.ttf", 13);
 	int FULL_SCREEN_FLAGS = ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
-		ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_MenuBar;
+		ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoScrollWithMouse;
 
 	float zoomv = 2.f;
 	float magnifiersize = 200.f;
 
+	bool usezoom = true;
 	bool jpegcode = true;
 	bool drawline = false;
 	bool quadtree = false;
@@ -78,7 +79,7 @@ int main()
 	GLuint image_textureo;
 	GLuint image_texturef;
 
-	int value = 90, blockn = 8;
+	int quality = 90, blockSize = 8;
 	int depth = 10, error = 5;
 
 	JpegView* jpeg = nullptr;
@@ -164,10 +165,11 @@ int main()
 							{
 								delete jpeg->originalimage;
 								delete jpeg->finalimage;
-								delete jpeg->red;
-								delete jpeg->green;
-								delete jpeg->blue;
-								delete jpeg->DCTCosTable;
+								for (int i = 0; i < 3; i++)
+									delete jpeg->YCbCr[i];
+								delete jpeg->YCbCr;
+								delete jpeg;
+								delete root;
 							}
 						}
 						uint8_t* img = stbi_load(openFile, &swidth, &sheight, &schannels, 3);
@@ -218,9 +220,9 @@ int main()
 
 			ImGui::Checkbox("Use Jpeg?", &jpegcode); ImGui::SameLine();
 			ImGui::Text("Factor:"); ImGui::SameLine();
-			ImGui::InputInt("##inputf", &value); ImGui::SameLine();
+			ImGui::SliderInt("##inputf", &quality, 0, 100); ImGui::SameLine();
 			ImGui::Text("Block Size:"); ImGui::SameLine();
-			ImGui::InputInt("##inputb", &blockn);
+			ImGui::SliderInt("##inputb", &blockSize, 1, 256);
 			ImGui::AlignTextToFramePadding();
 
 			if (jpegcode) 
@@ -228,11 +230,12 @@ int main()
 
 			ImGui::Checkbox("Use QuadTree?", &quadtree); ImGui::SameLine();
 			ImGui::Text("Max Depth:"); ImGui::SameLine();
-			ImGui::InputInt("##inputd", &depth); ImGui::SameLine();
+			ImGui::SliderInt("##inputd", &depth, 0, 100); ImGui::SameLine();
 			ImGui::Text("Max Error:"); ImGui::SameLine();
-			ImGui::InputInt("##inpute", &error); ImGui::SameLine();
+			ImGui::SliderInt("##inpute", &error, 0, 100); ImGui::SameLine();
 			ImGui::Checkbox("Draw Line Quad?", &drawline);
 			ImGui::AlignTextToFramePadding();
+			ImGui::Checkbox("##zoomcheck", &usezoom); ImGui::SameLine();
 			ImGui::Text("Zoom:"); ImGui::SameLine();
 			ImGui::SliderFloat("##inputz", &zoomv, 1, 100, "%g"); ImGui::SameLine();
 			ImGui::Text("Lupe size:"); ImGui::SameLine();
@@ -242,18 +245,20 @@ int main()
 				if (quadtree)
 					renderquad(jpeg, root, depth, error, swidth, sheight, drawline, image_texturef);
 				if (jpegcode)
-					renderjpeg(jpeg, blockn, value, image_texturef);
+					renderjpeg(jpeg, blockSize, quality, image_texturef);
 			}
 
-			float newwidth = ImGui::GetContentRegionAvail().x / 2;
+			float newwidth = ImGui::GetContentRegionAvail().x / 2.f - GImGui->Style.ItemSpacing.x / 2.f;
 			float newheight = ((float)jpeg->height / (float)jpeg->width) * newwidth;
 
 			ImGui::Image((void*)(intptr_t)image_textureo, ImVec2(newwidth, newheight));
-			zoomlayer(image_textureo, jpeg, zoomv, magnifiersize);
+			if (usezoom)
+				zoomlayer(image_textureo, jpeg, zoomv, magnifiersize, windowWidth, windowHeight);
 
 			ImGui::SameLine();
-			ImGui::Image((void*)(intptr_t)image_texturef, ImVec2(newwidth - GImGui->Style.ItemSpacing.x, newheight));
-			zoomlayer(image_texturef, jpeg, zoomv, magnifiersize);
+			ImGui::Image((void*)(intptr_t)image_texturef, ImVec2(newwidth, newheight));
+			if (usezoom)
+				zoomlayer(image_texturef, jpeg, zoomv, magnifiersize, windowWidth, windowHeight);
 		}
 		ImGui::End();
 
@@ -273,10 +278,11 @@ int main()
 	{
 		delete jpeg->originalimage;
 		delete jpeg->finalimage;
-		delete jpeg->red;
-		delete jpeg->green;
-		delete jpeg->blue;
-		delete jpeg->DCTCosTable;
+		for (int i = 0; i < 3; i++)
+			delete jpeg->YCbCr[i];
+		delete jpeg->YCbCr;
+		delete jpeg;
+		delete root;
 	}
 
 	return 0;

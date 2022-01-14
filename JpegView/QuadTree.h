@@ -34,7 +34,7 @@ struct quadnode
 	uint8_t* image;
 	bool leaf = false;
 	int depth, boxl, boxt, boxr, boxb, r, g, b;
-    struct quadnode* childrentl, * childrentr, * childrenbl, * childrenbr;
+    struct quadnode *childrentl, *childrentr, *childrenbl, *childrenbr;
 };
 
 quadnode* initquad(uint8_t* image, int width, int boxl, int boxt, int boxr, int boxb, int depth)
@@ -115,31 +115,33 @@ void DrawLine(int x1, int y1, int x2, int y2, uint8_t* image, int width, int hei
 {
 	if (x2 - x1 == 0)
 	{
-		if (y2 < y1) 
+		if (y2 < y1)
 			std::swap(y1, y2);
-		if (x1 >= width) 
-			x1 = width - 1;
-		for (int y = y1; y < y2; y++)
+		if (y1 <  height && y2 < height)
 		{
-			int index = (y * width + x1) * 3;
-			image[index + 0] = 128;
-			image[index + 1] = 128;
-			image[index + 2] = 128;
+			for (int y = y1; y <= y2; y++)
+			{
+				int index = (y * width + x1) * 3;
+				image[index + 0] = 128;
+				image[index + 1] = 128;
+				image[index + 2] = 128;
+			}
 		}
 		return;
 	}
 	if (y2 - y1 == 0)
 	{
-		if (x2 < x1) 
+		if (x2 < x1)
 			std::swap(x1, x2);
-		if (y1 >= height)
-			y1 = height - 1;
-		for (int x = x1; x < x2; x++)
+		if (x1 < width && x2 < width)
 		{
-			int index = (y1 * width + x) * 3;
-			image[index + 0] = 128;
-			image[index + 1] = 128;
-			image[index + 2] = 128;
+			for (int x = x1; x <= x2; x++)
+			{
+				int index = (y1 * width + x) * 3;
+				image[index + 0] = 128;
+				image[index + 1] = 128;
+				image[index + 2] = 128;
+			}
 		}
 		return;
 	}
