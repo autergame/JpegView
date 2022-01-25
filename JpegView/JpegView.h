@@ -37,10 +37,6 @@
 
 #include <vector>
 
-#ifndef mymax
-#define mymax(a,b)            (((a) >= (b)) ? (a) : (b))
-#endif
-
 uint8_t minmaxcolor(float color)
 {
     if (color > 255.f)
@@ -66,6 +62,8 @@ struct JpegView
     uint8_t* finalimage;
     uint8_t** YCbCr;
     int mwidth, mheight, blockSize;
+    bool compressionrate;
+    int qualitystart;
 };
 
 #include "QuadTree.h"
@@ -74,28 +72,39 @@ void zoomlayer(GLuint image_texture, JpegView* jpeg, float& zoom, float magnifie
 {
     if (ImGui::IsItemHovered())
     {
-        zoom += GImGui->IO.MouseWheel;
-        if (zoom <= 0)
-            zoom = 1;
+        if (GImGui->IO.MouseWheel > 0.f)
+            zoom *= 1.1f;
+        else if (GImGui->IO.MouseWheel < 0.f)
+            zoom *= (1.f / 1.1f);
+        if (zoom < 1.f)
+            zoom = 1.f;
 
         ImVec2 cursor = GImGui->IO.MousePos;
         ImRect lastrect = GImGui->LastItemData.Rect;
 
-        float centerx = jpeg->width * (cursor.x - lastrect.Min.x) / (lastrect.Max.x - lastrect.Min.x);
-        float centery = jpeg->height * (cursor.y - lastrect.Min.y) / (lastrect.Max.y - lastrect.Min.y);
-        float uv0x = (centerx - magnifiersize / zoom) / jpeg->width;
-        float uv0y = (centery - magnifiersize / zoom) / jpeg->height;
-        float uv1x = (centerx + magnifiersize / zoom) / jpeg->width;
-        float uv1y = (centery + magnifiersize / zoom) / jpeg->height;
+        float halfmagnifier = magnifiersize / 2.f;
+        float magnifierzoom = halfmagnifier / zoom;
 
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-        float cursorboxposx = mymax(cursor.x - magnifiersize / 2.f, 0.f);
-        float cursorboxposy = mymax(cursor.y - magnifiersize / 2.f, 0.f);
-        if (cursor.x + magnifiersize / 2.f > width)
+        float centerx = jpeg->width * ((cursor.x - lastrect.Min.x) / lastrect.GetWidth());
+        float centery = jpeg->height * ((cursor.y - lastrect.Min.y) / lastrect.GetHeight());
+        float uv0x = (centerx - magnifierzoom) / jpeg->width;
+        float uv0y = (centery - magnifierzoom) / jpeg->height;
+        float uv1x = (centerx + magnifierzoom) / jpeg->width;
+        float uv1y = (centery + magnifierzoom) / jpeg->height;
+
+        float cursorboxposx = cursor.x - halfmagnifier;
+        float cursorboxposy = cursor.y - halfmagnifier;
+        if (cursorboxposx < 0.f)
+            cursorboxposx = 0.f;
+        if (cursorboxposy < 0.f)
+            cursorboxposy = 0.f;
+        if (cursor.x + halfmagnifier > width)
             cursorboxposx = width - magnifiersize;
-        if (cursor.y + magnifiersize / 2.f > height)
+        if (cursor.y + halfmagnifier > height)
             cursorboxposy = height - magnifiersize;
+
         ImGui::SetNextWindowPos(ImVec2(cursorboxposx, cursorboxposy));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         ImGui::BeginTooltip();
         ImGui::Image((void*)(intptr_t)image_texture,
             ImVec2(magnifiersize, magnifiersize), ImVec2(uv0x, uv0y), ImVec2(uv1x, uv1y));
@@ -120,7 +129,33 @@ GLuint createimage(uint8_t* image, int width, int height)
     return image_texture;
 }
 
-float** quantize(float** DCTMatrix, float* qMatrix, JpegView* jpeg)
+float* generateQMatrix_nofactor(int blockSize)
+{
+    float* qMatrix = new float[blockSize * blockSize]{};
+    for (int y = 0; y < blockSize; y++)
+    {
+        for (int x = 0; x < blockSize; x++)
+        {
+            qMatrix[y * blockSize + x] = 1.f + x + y;
+        }
+    }
+    return qMatrix;
+}
+
+float* generateQMatrix(int blockSize, float factor)
+{
+    float* qMatrix = new float[blockSize * blockSize]{};
+    for (int y = 0; y < blockSize; y++)
+    {
+        for (int x = 0; x < blockSize; x++)
+        {
+            qMatrix[y * blockSize + x] = 1.f + (1.f + x + y) * factor;
+        }
+    }
+    return qMatrix;
+}
+
+float** quantize(float** DCTMatrix, float factor, JpegView* jpeg)
 {
     //for (int i = 0; i < 3; i++)
     //{
@@ -135,31 +170,51 @@ float** quantize(float** DCTMatrix, float* qMatrix, JpegView* jpeg)
     //        }
     //    }
     //}
-    for (int k = 0; k < jpeg->mheight * jpeg->mwidth; k++)
+    float* qMatrix;
+    if (!jpeg->compressionrate)
     {
-        int x = (k % jpeg->mwidth);
-        int y = (k / jpeg->mwidth);
-        int index = (y % jpeg->blockSize) * jpeg->blockSize + (x % jpeg->blockSize);
-
-        float qMatrixValue = minmaxq(qMatrix[index]);
-        DCTMatrix[0][k] = roundf(DCTMatrix[0][k] / qMatrixValue) * qMatrixValue;
-        DCTMatrix[1][k] = roundf(DCTMatrix[1][k] / qMatrixValue) * qMatrixValue;
-        DCTMatrix[2][k] = roundf(DCTMatrix[2][k] / qMatrixValue) * qMatrixValue;
-    }
-    return DCTMatrix;
-}
-
-float* generateQMatrix(int blockSize, float factor)
-{
-    float* qMatrix = new float[blockSize * blockSize]{};
-    for (int y = 0; y < blockSize; y++)
-    {
-        for (int x = 0; x < blockSize; x++)
+        if (factor >= 50.f)
+            factor = 200.f - factor * 2.f;
+        else
+            factor = 5000.f / factor;
+        qMatrix = generateQMatrix(jpeg->blockSize, factor);
+        for (int k = 0; k < jpeg->mheight * jpeg->mwidth; k++)
         {
-            qMatrix[y * blockSize + x] = 1.f + (1.f + x + y) * factor;
+            int x = (k % jpeg->mwidth);
+            int y = (k / jpeg->mwidth);
+            int index = (y % jpeg->blockSize) * jpeg->blockSize + (x % jpeg->blockSize);
+
+            float qMatrixValue = minmaxq(qMatrix[index]);
+            DCTMatrix[0][k] = roundf(DCTMatrix[0][k] / qMatrixValue) * qMatrixValue;
+            DCTMatrix[1][k] = roundf(DCTMatrix[1][k] / qMatrixValue) * qMatrixValue;
+            DCTMatrix[2][k] = roundf(DCTMatrix[2][k] / qMatrixValue) * qMatrixValue;
         }
     }
-    return qMatrix;
+    else
+    {
+        float control = 100.f - jpeg->qualitystart;
+        float block = (float)jpeg->mwidth / (float)jpeg->blockSize;
+        qMatrix = generateQMatrix_nofactor(jpeg->blockSize);
+        for (int k = 0; k < jpeg->mheight * jpeg->mwidth; k++)
+        {
+            int x = (k % jpeg->mwidth);
+            int y = (k / jpeg->mwidth);
+            int index = (y % jpeg->blockSize) * jpeg->blockSize + (x % jpeg->blockSize);
+
+            float factor = jpeg->qualitystart + (((float)x / (float)jpeg->blockSize) / block) * control;
+            if (factor >= 50.f)
+                factor = 200.f - factor * 2.f;
+            else
+                factor = 5000.f / factor;
+
+            float qMatrixValue = minmaxq(1.f + qMatrix[index] * factor);
+            DCTMatrix[0][k] = roundf(DCTMatrix[0][k] / qMatrixValue) * qMatrixValue;
+            DCTMatrix[1][k] = roundf(DCTMatrix[1][k] / qMatrixValue) * qMatrixValue;
+            DCTMatrix[2][k] = roundf(DCTMatrix[2][k] / qMatrixValue) * qMatrixValue;
+        }
+    }
+    delete qMatrix;
+    return DCTMatrix;
 }
 
 float* generateDCTtable(int blockSize)
@@ -183,9 +238,10 @@ float* generateAlphatable(int blockSize)
     {
         for (int x = 0; x < blockSize; x++)
         {
-            alpha[y * blockSize + x] = (y == 0 ? sqrt1_2 : 1.f) * (x == 0 ? sqrt1_2 : 1.f);
+            alpha[y * blockSize + x] = (y == 0 || x == 0) ? sqrt1_2 : 1.f;
         }
     }
+    alpha[0] = sqrt1_2 * sqrt1_2;
     return alpha;
 }
 
@@ -326,6 +382,8 @@ uint8_t** reverseDCT(float** DCT, float* DCTTable, JpegView* jpeg)
             }
         }
     }
+    for (int i = 0; i < 3; i++)
+        delete DCT[i];
     delete DCT;
     delete alpha;
     return result;
@@ -408,19 +466,12 @@ void compress(JpegView* jpeg, float factor)
     if (jpeg->finalimage)
         delete jpeg->finalimage;
 
-    if (factor >= 50.f)
-        factor = 200.f - factor * 2.f;
-    else
-        factor = 5000.f / factor;
-
-    float* QMatrix  = generateQMatrix(jpeg->blockSize, factor);
     float* DCTTable = generateDCTtable(jpeg->blockSize);
 
-    uint8_t** YCbCrmodified = reverseDCT(quantize(DCT(jpeg->YCbCr, DCTTable, jpeg), QMatrix, jpeg), DCTTable, jpeg);
+    uint8_t** YCbCrmodified = reverseDCT(quantize(DCT(jpeg->YCbCr, DCTTable, jpeg), factor, jpeg), DCTTable, jpeg);
     
     jpeg->finalimage = matrixToImage(YCbCrmodified, jpeg);
 
-    delete QMatrix;
     delete DCTTable;
     for (int i = 0; i < 3; i++)
         delete YCbCrmodified[i];
@@ -447,6 +498,8 @@ JpegView* initjpeg(uint8_t* original, int width, int height)
     jpeg->width = width;
     jpeg->height = height;
     jpeg->blockSize = 8;
+    jpeg->compressionrate = false;
+    jpeg->qualitystart = 1;
 
     jpeg->originalimage = original;
 

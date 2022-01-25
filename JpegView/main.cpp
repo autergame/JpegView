@@ -10,12 +10,13 @@ double GetTimeSinceStart(LARGE_INTEGER Frequencye, LARGE_INTEGER Starte)
 
 void glfw_error_callback(int error, const char* description)
 {
-	fprintf(stderr, "Glfw Error %d: %s\n", error, description);
-	scanf_s("press enter to exit.");
+	char msgTitle[512] = { '\0' };
+	sprintf_s(msgTitle, 512, "GLFW Error %d: %s", error, description);
+	MessageBoxA(nullptr, msgTitle, "ERROR", MB_OK | MB_ICONERROR | MB_TOPMOST);
 	exit(1);
 }
 
-int main()
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
 {
 	LARGE_INTEGER Frequencye, Starte;
 	QueryPerformanceFrequency(&Frequencye);
@@ -71,6 +72,9 @@ int main()
 	float zoomv = 2.f;
 	float magnifiersize = 200.f;
 
+	float zoomvmax = 100.f;
+	float magnifiersizemax = 1000.f;
+
 	bool usezoom = true;
 	bool jpegcode = true;
 	bool drawline = false;
@@ -81,6 +85,8 @@ int main()
 
 	int quality = 90, blockSize = 8;
 	int depth = 10, error = 5;
+
+	int depthmax = 100, errormax = 100;
 
 	JpegView* jpeg = nullptr;
     quadnode* root = nullptr;
@@ -103,9 +109,17 @@ int main()
 		root = initquad(img, swidth, 0, 0, swidth, sheight, 0);
 		image_textureo = createimage(img, swidth, sheight);
 		image_texturef = createimage(jpeg->finalimage, swidth, sheight);
+		for (float i = 1.f; i < 10.f; i++)
+		{
+			if ((magnifiersize / i) / swidth < 0.15f)
+			{
+				zoomv = i;
+				break;
+			}
+		}
 	}
 	else
-		printf("Error in loading the image\n");
+		MessageBoxA(nullptr, "Error loading the image", "ERROR", MB_OK | MB_ICONERROR | MB_TOPMOST);
 #endif 
 
 	glClearColor(0.f, 0.f, 0.f, 1.f);
@@ -170,6 +184,8 @@ int main()
 								delete jpeg->YCbCr;
 								delete jpeg;
 								delete root;
+								jpeg = nullptr;
+								root = nullptr;
 							}
 						}
 						uint8_t* img = stbi_load(openFile, &swidth, &sheight, &schannels, 3);
@@ -179,9 +195,17 @@ int main()
 							root = initquad(img, swidth, 0, 0, swidth, sheight, 0);
 							image_textureo = createimage(img, swidth, sheight);
 							image_texturef = createimage(jpeg->finalimage, swidth, sheight);
+							for (float i = 1.f; i < 10.f; i++)
+							{
+								if ((magnifiersize / i) / swidth < 0.15f)
+								{
+									zoomv = i;
+									break;
+								}
+							}
 						}
 						else
-							printf("Error in loading the image\n");
+							MessageBoxA(nullptr, "Error in loading the image", "ERROR", MB_OK | MB_ICONERROR | MB_TOPMOST);
 					}
 				}
 			}
@@ -211,39 +235,67 @@ int main()
 			}
 			ImGui::EndMenuBar();
 		}
-		if (openFile[0] != 0 && jpeg != nullptr)
+		if (openFile[0] != 0 && jpeg != nullptr && root != nullptr)
 		{
 			ImGui::AlignTextToFramePadding();
-
-			if (quadtree) 
-				jpegcode = false;
-
 			ImGui::Checkbox("Use Jpeg?", &jpegcode); ImGui::SameLine();
 			ImGui::Text("Factor:"); ImGui::SameLine();
-			ImGui::SliderInt("##inputf", &quality, 0, 100); ImGui::SameLine();
+			ImGui::DragInt("##inputf", &quality, 1.f, 1, 100); ImGui::SameLine();
 			ImGui::Text("Block Size:"); ImGui::SameLine();
-			ImGui::SliderInt("##inputb", &blockSize, 1, 256);
-			ImGui::AlignTextToFramePadding();
-
-			if (jpegcode) 
+			ImGui::DragInt("##inputb", &blockSize, 1.f, 1, 256);
+			if (jpegcode)
+			{
+				ImGui::Indent();
+				ImGui::Checkbox("Show Compression Rate?", &jpeg->compressionrate); ImGui::SameLine();
+				ImGui::Text("Quality Start:"); ImGui::SameLine();
+				ImGui::DragInt("##inputq", &jpeg->qualitystart, 1.f, 1, 100);
+				ImGui::Unindent();
 				quadtree = false;
+			}
 
+			ImGui::AlignTextToFramePadding();
 			ImGui::Checkbox("Use QuadTree?", &quadtree); ImGui::SameLine();
 			ImGui::Text("Max Depth:"); ImGui::SameLine();
-			ImGui::SliderInt("##inputd", &depth, 0, 100); ImGui::SameLine();
+			ImGui::DragInt("##inputd", &depth, 1.f, 0, depthmax); ImGui::SameLine();
 			ImGui::Text("Max Error:"); ImGui::SameLine();
-			ImGui::SliderInt("##inpute", &error, 0, 100); ImGui::SameLine();
+			ImGui::DragInt("##inpute", &error, 1.f, 0, errormax); ImGui::SameLine();
 			ImGui::Checkbox("Draw Line Quad?", &drawline);
+
+			jpegcode = !quadtree;
+			if (depth >= depthmax)
+			{
+				depthmax += 100;
+				depth -= 10;
+			}
+			if (error >= errormax)
+			{
+				errormax += 100;
+				error -= 10;
+			}
+
 			ImGui::AlignTextToFramePadding();
 			ImGui::Checkbox("##zoomcheck", &usezoom); ImGui::SameLine();
 			ImGui::Text("Zoom:"); ImGui::SameLine();
-			ImGui::SliderFloat("##inputz", &zoomv, 1, 100, "%g"); ImGui::SameLine();
+			ImGui::DragFloat("##inputz", &zoomv, 1.f, 1.f, zoomvmax, "%g"); ImGui::SameLine();
 			ImGui::Text("Lupe size:"); ImGui::SameLine();
-			ImGui::SliderFloat("##inputl", &magnifiersize, 10, 1000, "%g"); ImGui::SameLine();
+			ImGui::DragFloat("##inputl", &magnifiersize, 1.f, 10.f, magnifiersizemax, "%g");
+
+			if (zoomv >= zoomvmax)
+			{
+				zoomvmax += 100.f;
+				zoomv -= 10.f;
+			}
+			if (magnifiersize >= magnifiersizemax)
+			{
+				magnifiersizemax += 1000.f;
+				magnifiersize -= 100.f;
+			}
+
+			ImGui::SameLine();
 			if (ImGui::Button("Compress"))
 			{
 				if (quadtree)
-					renderquad(jpeg, root, depth, error, swidth, sheight, drawline, image_texturef);
+					renderquad(jpeg, root, depth, error, drawline, image_texturef);
 				if (jpegcode)
 					renderjpeg(jpeg, blockSize, quality, image_texturef);
 			}
@@ -274,15 +326,18 @@ int main()
 	glfwDestroyWindow(glfwWindow);
 	glfwTerminate();
 
-	if (jpeg->originalimage)
+	if (jpeg != nullptr)
 	{
-		delete jpeg->originalimage;
-		delete jpeg->finalimage;
-		for (int i = 0; i < 3; i++)
-			delete jpeg->YCbCr[i];
-		delete jpeg->YCbCr;
-		delete jpeg;
-		delete root;
+		if (jpeg->originalimage)
+		{
+			delete jpeg->originalimage;
+			delete jpeg->finalimage;
+			for (int i = 0; i < 3; i++)
+				delete jpeg->YCbCr[i];
+			delete jpeg->YCbCr;
+			delete jpeg;
+			delete root;
+		}
 	}
 
 	return 0;

@@ -174,18 +174,18 @@ void cleanroot(quadnode* root)
 	}
 }
 
-void renderquad(JpegView* jpeg, quadnode* root, int depth, int error, int width, int height, bool drawline, GLuint image_texturef)
+void renderquad(JpegView* jpeg, quadnode* root, int depth, int error, bool drawline, GLuint image_texturef)
 {
 	if (jpeg->finalimage)
 		delete jpeg->finalimage;
 
 	int max_depthe = 0;
-	build_tree(root, width, depth, error, max_depthe);
+	build_tree(root, jpeg->width, depth, error, max_depthe);
 
 	std::vector<quadnode*> list;
 	get_leaf_nodes_recusion(root, list);
 
-	jpeg->finalimage = new uint8_t[width * height * 3]{};
+	jpeg->finalimage = new uint8_t[jpeg->width * jpeg->height * 3]{};
 	for (size_t i = 0; i < list.size(); i++)
 	{
 		quadnode* quad = list[i];
@@ -193,7 +193,7 @@ void renderquad(JpegView* jpeg, quadnode* root, int depth, int error, int width,
 		{
 			for (int x = quad->boxl; x < quad->boxr; x++)
 			{
-				int index = (y * width + x) * 3;
+				int index = (y * jpeg->width + x) * 3;
 				jpeg->finalimage[index + 0] = quad->r;
 				jpeg->finalimage[index + 1] = quad->g;
 				jpeg->finalimage[index + 2] = quad->b;
@@ -208,16 +208,16 @@ void renderquad(JpegView* jpeg, quadnode* root, int depth, int error, int width,
 			quadnode* quad = list[i];
 			if ((quad->boxr - quad->boxl) >= 3 && (quad->boxb - quad->boxt) >= 3)
 			{
-				DrawLine(quad->boxl, quad->boxt, quad->boxr, quad->boxt, jpeg->finalimage, width, height);
-				DrawLine(quad->boxl, quad->boxb, quad->boxr, quad->boxb, jpeg->finalimage, width, height);
-				DrawLine(quad->boxr, quad->boxt, quad->boxr, quad->boxb, jpeg->finalimage, width, height);
-				DrawLine(quad->boxl, quad->boxt, quad->boxl, quad->boxb, jpeg->finalimage, width, height);
+				DrawLine(quad->boxl, quad->boxt, quad->boxr, quad->boxt, jpeg->finalimage, jpeg->width, jpeg->height);
+				DrawLine(quad->boxl, quad->boxb, quad->boxr, quad->boxb, jpeg->finalimage, jpeg->width, jpeg->height);
+				DrawLine(quad->boxr, quad->boxt, quad->boxr, quad->boxb, jpeg->finalimage, jpeg->width, jpeg->height);
+				DrawLine(quad->boxl, quad->boxt, quad->boxl, quad->boxb, jpeg->finalimage, jpeg->width, jpeg->height);
 			}
 		}
 	}
 
 	glBindTexture(GL_TEXTURE_2D, image_texturef);
-	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, jpeg->finalimage);
+	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, jpeg->width, jpeg->height, GL_RGB, GL_UNSIGNED_BYTE, jpeg->finalimage);
 
 	cleanroot(root);
 }
