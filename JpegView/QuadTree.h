@@ -4,6 +4,7 @@
 float weighted_average(int* hist, int& value)
 {
 	float error = 0.f;
+
 	int total = 0;
 	for (int i = 0; i < 256; i++)
 		total += hist[i];
@@ -12,11 +13,12 @@ float weighted_average(int* hist, int& value)
 		for (int i = 0; i < 256; i++)
 			value += i * hist[i];
 		value /= total;
+
 		for (int i = 0; i < 256; i++)
 			error += hist[i] * (value - i) * (value - i);
-		error /= total;
-		error = powf(error, 0.5f);
+		error = sqrtf(error / total);
 	}
+
 	return error;
 }
 
@@ -25,6 +27,7 @@ float color_from_histogram(int* histr, int* histg, int* histb, int& r, int& g, i
 	float re = weighted_average(histr, r);
 	float ge = weighted_average(histg, g);
 	float be = weighted_average(histb, b);
+
 	return re * 0.2989f + ge * 0.5870f + be * 0.1140f;
 }
 
@@ -32,12 +35,11 @@ struct quadnode
 {
 	float error;
 	uint8_t* image;
-	bool leaf = false;
 	int depth, boxl, boxt, boxr, boxb, r, g, b;
-    struct quadnode *childrentl, *childrentr, *childrenbl, *childrenbr;
+    struct quadnode *children_tl, *children_tr, *children_bl, *children_br;
 };
 
-quadnode* initquad(uint8_t* image, int width, int boxl, int boxt, int boxr, int boxb, int depth)
+quadnode* init_quad(uint8_t* image, int width, int boxl, int boxt, int boxr, int boxb, int depth)
 {
 	quadnode* newquad = new quadnode{};
 	newquad->boxl = boxl;
@@ -64,50 +66,33 @@ quadnode* initquad(uint8_t* image, int width, int boxl, int boxt, int boxr, int 
 
 	newquad->error = color_from_histogram(histr, histg, histb, newquad->r, newquad->g, newquad->b);
 
-	delete histr; 
-	delete histg;
-	delete histb;
+	deletemod(&histr);
+	deletemod(&histg);
+	deletemod(&histb);
 
 	return newquad;
 }
 
-void build_tree(quadnode* node, int width, int max_depth, int errormax, int& max_depthe)
+void build_tree(quadnode* node, std::vector<quadnode*>& list, int width, int max_depth, int threshold_error, int min_size)
 {
-	if ((node->depth >= max_depth) || (node->error <= errormax))
+	if ((node->depth <= max_depth) && (node->error >= threshold_error) &&
+		((node->boxr - node->boxl) > min_size && (node->boxb - node->boxt) > min_size))
 	{
-		if (node->depth > max_depthe)
-			max_depthe = node->depth;
-		node->leaf = true;
-		return;
-	}
+		int lr = node->boxl + (node->boxr - node->boxl) / 2;
+		int tb = node->boxt + (node->boxb - node->boxt) / 2;
 
-	int lr = node->boxl + (node->boxr - node->boxl) / 2;
-	int tb = node->boxt + (node->boxb - node->boxt) / 2;
+		node->children_tl = init_quad(node->image, width, node->boxl, node->boxt, lr, tb, node->depth + 1);
+		node->children_tr = init_quad(node->image, width, lr, node->boxt, node->boxr, tb, node->depth + 1);
+		node->children_bl = init_quad(node->image, width, node->boxl, tb, lr, node->boxb, node->depth + 1);
+		node->children_br = init_quad(node->image, width, lr, tb, node->boxr, node->boxb, node->depth + 1);
 
-	node->childrentl = initquad(node->image, width, node->boxl, node->boxt, lr, tb, node->depth + 1);
-	node->childrentr = initquad(node->image, width, lr, node->boxt, node->boxr, tb, node->depth + 1);
-	node->childrenbl = initquad(node->image, width, node->boxl, tb, lr, node->boxb, node->depth + 1);
-	node->childrenbr = initquad(node->image, width, lr, tb, node->boxr, node->boxb, node->depth + 1);
-
-	build_tree(node->childrentl, width, max_depth, errormax, max_depthe);
-	build_tree(node->childrentr, width, max_depth, errormax, max_depthe);
-	build_tree(node->childrenbl, width, max_depth, errormax, max_depthe);
-	build_tree(node->childrenbr, width, max_depth, errormax, max_depthe);
-}
-
-void get_leaf_nodes_recusion(quadnode* node, std::vector<quadnode*>& list)
-{
-	if (node)
-	{
-		if (node->leaf == true)
-			list.push_back(node);
-		else
-		{
-			get_leaf_nodes_recusion(node->childrentl, list);
-			get_leaf_nodes_recusion(node->childrentr, list);
-			get_leaf_nodes_recusion(node->childrenbl, list);
-			get_leaf_nodes_recusion(node->childrenbr, list);
-		}
+		build_tree(node->children_tl, list, width, max_depth, threshold_error, min_size);
+		build_tree(node->children_tr, list, width, max_depth, threshold_error, min_size);
+		build_tree(node->children_bl, list, width, max_depth, threshold_error, min_size);
+		build_tree(node->children_br, list, width, max_depth, threshold_error, min_size);
+	} 
+	else {
+		list.push_back(node);
 	}
 }
 
@@ -115,77 +100,79 @@ void DrawLine(int x1, int y1, int x2, int y2, uint8_t* image, int width, int hei
 {
 	if (x2 - x1 == 0)
 	{
-		if (y2 < y1)
-			std::swap(y1, y2);
-		if (y1 <  height && y2 < height)
+		if (x1 <= width && y1 <= height)
 		{
-			for (int y = y1; y <= y2; y++)
+			if (x2 <= width && y2 <= height)
 			{
-				int index = (y * width + x1) * 3;
-				image[index + 0] = 128;
-				image[index + 1] = 128;
-				image[index + 2] = 128;
+				if (x1 >= width)
+					x1 = width - 1;
+				if (y1 >= height)
+					y1 = height - 1;
+				if (x2 >= width)
+					x2 = width - 1;
+				if (y2 >= height)
+					y2 = height - 1;
+				for (int y = y1; y <= y2; y++)
+				{
+					int index = (y * width + x1) * 3;
+					image[index + 0] = 128;
+					image[index + 1] = 128;
+					image[index + 2] = 128;
+				}
 			}
 		}
-		return;
 	}
-	if (y2 - y1 == 0)
+	else if (y2 - y1 == 0)
 	{
-		if (x2 < x1)
-			std::swap(x1, x2);
-		if (x1 < width && x2 < width)
+		if (x1 <= width && y1 <= height)
 		{
-			for (int x = x1; x <= x2; x++)
+			if (x2 <= width && y2 <= height)
 			{
-				int index = (y1 * width + x) * 3;
-				image[index + 0] = 128;
-				image[index + 1] = 128;
-				image[index + 2] = 128;
+				if (x1 >= width)
+					x1 = width - 1;
+				if (y1 >= height)
+					y1 = height - 1;
+				if (x2 >= width)
+					x2 = width - 1;
+				if (y2 >= height)
+					y2 = height - 1;
+				for (int x = x1; x <= x2; x++)
+				{
+					int index = (y1 * width + x) * 3;
+					image[index + 0] = 128;
+					image[index + 1] = 128;
+					image[index + 2] = 128;
+				}
 			}
-		}
-		return;
-	}
-}
-
-void cleanroot(quadnode* root)
-{
-	if (root)
-	{
-		if (root->childrenbl)
-		{
-			cleanroot(root->childrenbl);
-			delete root->childrenbl;
-		}
-		if (root->childrenbr)
-		{
-			cleanroot(root->childrenbr);
-			delete root->childrenbr;
-		}
-		if (root->childrentl)
-		{
-			cleanroot(root->childrentl);
-			delete root->childrentl;
-		}
-		if (root->childrentr)
-		{
-			cleanroot(root->childrentr);
-			delete root->childrentr;
 		}
 	}
 }
 
-void renderquad(JpegView* jpeg, quadnode* root, int depth, int error, bool drawline, GLuint image_texturef)
+void clean_node(quadnode** node)
 {
-	if (jpeg->finalimage)
-		delete jpeg->finalimage;
+	if (*node != nullptr)
+	{
+		clean_node(&(*node)->children_tl);
+		clean_node(&(*node)->children_tr);
+		clean_node(&(*node)->children_bl);
+		clean_node(&(*node)->children_br);
 
-	int max_depthe = 0;
-	build_tree(root, jpeg->width, depth, error, max_depthe);
+		deletemod(node);
+	}
+}
+
+void render_quadtree(JpegView* jpeg, int max_depth, int threshold_error, int min_size, bool drawline, 
+	GLuint image_texturef, GLuint image_texturef_zoom)
+{
+	if (jpeg->final_image != nullptr)
+		deletemod(&jpeg->final_image);
+
+	quadnode* root = init_quad(jpeg->original_image, jpeg->width, 0, 0, jpeg->width, jpeg->height, 0);
 
 	std::vector<quadnode*> list;
-	get_leaf_nodes_recusion(root, list);
+	build_tree(root, list, jpeg->width, max_depth, threshold_error, min_size);
 
-	jpeg->finalimage = new uint8_t[jpeg->width * jpeg->height * 3]{};
+	jpeg->final_image = new uint8_t[jpeg->width * jpeg->height * 3]{};
 	for (size_t i = 0; i < list.size(); i++)
 	{
 		quadnode* quad = list[i];
@@ -194,9 +181,9 @@ void renderquad(JpegView* jpeg, quadnode* root, int depth, int error, bool drawl
 			for (int x = quad->boxl; x < quad->boxr; x++)
 			{
 				int index = (y * jpeg->width + x) * 3;
-				jpeg->finalimage[index + 0] = quad->r;
-				jpeg->finalimage[index + 1] = quad->g;
-				jpeg->finalimage[index + 2] = quad->b;
+				jpeg->final_image[index + 0] = quad->r;
+				jpeg->final_image[index + 1] = quad->g;
+				jpeg->final_image[index + 2] = quad->b;
 			}
 		}
 	}
@@ -206,18 +193,21 @@ void renderquad(JpegView* jpeg, quadnode* root, int depth, int error, bool drawl
 		for (size_t i = 0; i < list.size(); i++)
 		{
 			quadnode* quad = list[i];
-			if ((quad->boxr - quad->boxl) >= 3 && (quad->boxb - quad->boxt) >= 3)
-			{
-				DrawLine(quad->boxl, quad->boxt, quad->boxr, quad->boxt, jpeg->finalimage, jpeg->width, jpeg->height);
-				DrawLine(quad->boxl, quad->boxb, quad->boxr, quad->boxb, jpeg->finalimage, jpeg->width, jpeg->height);
-				DrawLine(quad->boxr, quad->boxt, quad->boxr, quad->boxb, jpeg->finalimage, jpeg->width, jpeg->height);
-				DrawLine(quad->boxl, quad->boxt, quad->boxl, quad->boxb, jpeg->finalimage, jpeg->width, jpeg->height);
-			}
+			//if ((quad->boxr - quad->boxl) > min_size && (quad->boxb - quad->boxt) > min_size)
+			//{
+				DrawLine(quad->boxl, quad->boxt, quad->boxr, quad->boxt, jpeg->final_image, jpeg->width, jpeg->height);
+				DrawLine(quad->boxl, quad->boxb, quad->boxr, quad->boxb, jpeg->final_image, jpeg->width, jpeg->height);
+				DrawLine(quad->boxl, quad->boxt, quad->boxl, quad->boxb, jpeg->final_image, jpeg->width, jpeg->height);
+				DrawLine(quad->boxr, quad->boxt, quad->boxr, quad->boxb, jpeg->final_image, jpeg->width, jpeg->height);
+			//}
 		}
 	}
 
-	glBindTexture(GL_TEXTURE_2D, image_texturef);
-	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, jpeg->width, jpeg->height, GL_RGB, GL_UNSIGNED_BYTE, jpeg->finalimage);
+	clean_node(&root);
 
-	cleanroot(root);
+	glBindTexture(GL_TEXTURE_2D, image_texturef);
+	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, jpeg->width, jpeg->height, GL_RGB, GL_UNSIGNED_BYTE, jpeg->final_image);
+
+	glBindTexture(GL_TEXTURE_2D, image_texturef_zoom);
+	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, jpeg->width, jpeg->height, GL_RGB, GL_UNSIGNED_BYTE, jpeg->final_image);
 }

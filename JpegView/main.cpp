@@ -1,5 +1,6 @@
 //author https://github.com/autergame
 #include "JpegView.h"
+#include "QuadTree.h"
 
 double GetTimeSinceStart(LARGE_INTEGER Frequencye, LARGE_INTEGER Starte)
 {
@@ -66,8 +67,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 2.f);
 	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(GImGui->Style.ItemSpacing.x, GImGui->Style.ItemSpacing.x));
 	ImGui::GetIO().Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\consola.ttf", 13);
-	int FULL_SCREEN_FLAGS = ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
-		ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoScrollWithMouse;
+	int FULL_SCREEN_FLAGS = ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar |
+		ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |	
+		ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_AlwaysVerticalScrollbar;
+
+	ImGuiWindowFlags usescroll = ImGuiWindowFlags_NoScrollWithMouse;
 
 	float zoomv = 2.f;
 	float magnifiersize = 200.f;
@@ -76,20 +80,24 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 	float magnifiersizemax = 1000.f;
 
 	bool usezoom = true;
-	bool jpegcode = true;
-	bool drawline = false;
+	bool jpegcomp = true;
+	bool drawline = true;
 	bool quadtree = false;
 
 	GLuint image_textureo;
 	GLuint image_texturef;
+	GLuint image_textureo_zoom;
+	GLuint image_texturef_zoom;
 
-	int quality = 90, blockSize = 8;
-	int depth = 10, error = 5;
+	ImVec2 uv_min = ImVec2(0.f, 0.f);
+	ImVec2 uv_max = ImVec2(1.f, 1.f);
 
-	int depthmax = 100, errormax = 100;
+	int quality = 90, block_size = 8;
+	int max_depth = 10, threshold_error = 5, min_size = 8;
+
+	int max_depthmax = 100, threshold_errormax = 100, min_sizemax = 100;
 
 	JpegView* jpeg = nullptr;
-    quadnode* root = nullptr;
 	int swidth, sheight, schannels;
 
 	float Deltatime = 0, Lastedtime = 0;
@@ -105,18 +113,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 	if (img != nullptr)
 	{
 		memcpy(openFile, teststr, strlen(teststr));
-		jpeg = initjpeg(img, swidth, sheight);
-		root = initquad(img, swidth, 0, 0, swidth, sheight, 0);
-		image_textureo = createimage(img, swidth, sheight);
-		image_texturef = createimage(jpeg->finalimage, swidth, sheight);
-		for (float i = 1.f; i < 10.f; i++)
-		{
-			if ((magnifiersize / i) / swidth < 0.15f)
-			{
-				zoomv = i;
-				break;
-			}
-		}
+		jpeg = init_jpeg(img, swidth, sheight);
+		image_textureo = create_image(img, swidth, sheight, true);
+		image_texturef = create_image(jpeg->final_image, swidth, sheight, true);
+		image_textureo_zoom = create_image(img, swidth, sheight, false);
+		image_texturef_zoom = create_image(jpeg->final_image, swidth, sheight, false);
 	}
 	else
 		MessageBoxA(nullptr, "Error loading the image", "ERROR", MB_OK | MB_ICONERROR | MB_TOPMOST);
@@ -149,7 +150,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
 		ImGui::SetNextWindowPos(ImVec2(0, 0));
 		ImGui::SetNextWindowSize(ImVec2((float)windowWidth, (float)windowHeight));
-		ImGui::Begin("Main", 0, FULL_SCREEN_FLAGS);
+		ImGui::Begin("Main", 0, FULL_SCREEN_FLAGS | usescroll);
 		if (ImGui::BeginMenuBar())
 		{
 			if (ImGui::MenuItem("Open image"))
@@ -175,34 +176,25 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 					{
 						if (jpeg != nullptr)
 						{
-							if (jpeg->originalimage)
+							if (jpeg->original_image)
 							{
-								delete jpeg->originalimage;
-								delete jpeg->finalimage;
+								deletemod(&jpeg->original_image);
+								deletemod(&jpeg->final_image);
 								for (int i = 0; i < 3; i++)
-									delete jpeg->YCbCr[i];
-								delete jpeg->YCbCr;
-								delete jpeg;
-								delete root;
-								jpeg = nullptr;
-								root = nullptr;
+									deletemod(&jpeg->YCbCr[i]);
+								deletemod(&jpeg->YCbCr);
+								deletemod(&jpeg);
 							}
 						}
+
 						uint8_t* img = stbi_load(openFile, &swidth, &sheight, &schannels, 3);
 						if (img != nullptr)
 						{
-							jpeg = initjpeg(img, swidth, sheight);
-							root = initquad(img, swidth, 0, 0, swidth, sheight, 0);
-							image_textureo = createimage(img, swidth, sheight);
-							image_texturef = createimage(jpeg->finalimage, swidth, sheight);
-							for (float i = 1.f; i < 10.f; i++)
-							{
-								if ((magnifiersize / i) / swidth < 0.15f)
-								{
-									zoomv = i;
-									break;
-								}
-							}
+							jpeg = init_jpeg(img, swidth, sheight);
+							image_textureo = create_image(img, swidth, sheight, true);
+							image_texturef = create_image(jpeg->final_image, swidth, sheight, true);
+							image_textureo_zoom = create_image(img, swidth, sheight, false);
+							image_texturef_zoom = create_image(jpeg->final_image, swidth, sheight, false);
 						}
 						else
 							MessageBoxA(nullptr, "Error in loading the image", "ERROR", MB_OK | MB_ICONERROR | MB_TOPMOST);
@@ -229,48 +221,54 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 					ofn.Flags = OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
 					if (GetSaveFileNameA(&ofn) == TRUE)
 					{
-						stbi_write_png(saveFile, jpeg->width, jpeg->height, 3, jpeg->finalimage, 0);
+						stbi_write_png(saveFile, jpeg->width, jpeg->height, 3, jpeg->final_image, 0);
 					}
 				}
 			}
 			ImGui::EndMenuBar();
 		}
-		if (openFile[0] != 0 && jpeg != nullptr && root != nullptr)
+		if (openFile[0] != 0 && jpeg != nullptr)
 		{
 			ImGui::AlignTextToFramePadding();
-			ImGui::Checkbox("Use Jpeg?", &jpegcode); ImGui::SameLine();
+			ImGui::Checkbox("Use Jpeg?", &jpegcomp); ImGui::SameLine();
 			ImGui::Text("Factor:"); ImGui::SameLine();
 			ImGui::DragInt("##inputf", &quality, 1.f, 1, 100); ImGui::SameLine();
 			ImGui::Text("Block Size:"); ImGui::SameLine();
-			ImGui::DragInt("##inputb", &blockSize, 1.f, 1, 256);
-			if (jpegcode)
-			{
-				ImGui::Indent();
-				ImGui::Checkbox("Show Compression Rate?", &jpeg->compressionrate); ImGui::SameLine();
-				ImGui::Text("Quality Start:"); ImGui::SameLine();
-				ImGui::DragInt("##inputq", &jpeg->qualitystart, 1.f, 1, 100);
-				ImGui::Unindent();
+			ImGui::DragInt("##inputb", &block_size, 1.f, 1, 256);
+			ImGui::AlignTextToFramePadding(); ImGui::Bullet();
+			ImGui::Checkbox("Show Compression Rate?", &jpeg->compression_rate); ImGui::SameLine();
+			ImGui::Text("Quality Start:"); ImGui::SameLine();
+			ImGui::DragInt("##inputc", &jpeg->quality_start, 1.f, 1, 100);
+			if (jpegcomp)
 				quadtree = false;
-			}
 
 			ImGui::AlignTextToFramePadding();
 			ImGui::Checkbox("Use QuadTree?", &quadtree); ImGui::SameLine();
 			ImGui::Text("Max Depth:"); ImGui::SameLine();
-			ImGui::DragInt("##inputd", &depth, 1.f, 0, depthmax); ImGui::SameLine();
-			ImGui::Text("Max Error:"); ImGui::SameLine();
-			ImGui::DragInt("##inpute", &error, 1.f, 0, errormax); ImGui::SameLine();
+			ImGui::DragInt("##inputd", &max_depth, 1.f, 0, max_depthmax); ImGui::SameLine();
+			ImGui::Text("Error Threshold:"); ImGui::SameLine();
+			ImGui::DragInt("##inpute", &threshold_error, 1.f, 0, threshold_errormax);
+			ImGui::AlignTextToFramePadding(); ImGui::Bullet();
+			ImGui::Text("Min Size:"); ImGui::SameLine();
+			ImGui::DragInt("##inputs", &min_size, 1.f, 0, min_sizemax); ImGui::SameLine();
 			ImGui::Checkbox("Draw Line Quad?", &drawline);
 
-			jpegcode = !quadtree;
-			if (depth >= depthmax)
+			jpegcomp = !quadtree;
+
+			if (max_depth >= max_depthmax)
 			{
-				depthmax += 100;
-				depth -= 10;
+				max_depthmax += 100;
+				max_depth -= 10;
 			}
-			if (error >= errormax)
+			if (threshold_error >= threshold_errormax)
 			{
-				errormax += 100;
-				error -= 10;
+				threshold_errormax += 100;
+				threshold_error -= 10;
+			}
+			if (min_size >= min_sizemax)
+			{
+				min_sizemax += 100;
+				min_size -= 10;
 			}
 
 			ImGui::AlignTextToFramePadding();
@@ -294,23 +292,38 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 			ImGui::SameLine();
 			if (ImGui::Button("Compress"))
 			{
-				if (quadtree)
-					renderquad(jpeg, root, depth, error, drawline, image_texturef);
-				if (jpegcode)
-					renderjpeg(jpeg, blockSize, quality, image_texturef);
+				if (quadtree && jpegcomp)
+				{
+
+				}
+				else 
+				{
+					if (quadtree)
+						render_quadtree(jpeg, max_depth, threshold_error, min_size, drawline, image_texturef, image_texturef_zoom);
+					if (jpegcomp)
+						render_jpeg(jpeg, block_size, quality, image_texturef, image_texturef_zoom);
+				}
 			}
 
-			float newwidth = ImGui::GetContentRegionAvail().x / 2.f - GImGui->Style.ItemSpacing.x / 2.f;
-			float newheight = ((float)jpeg->height / (float)jpeg->width) * newwidth;
-
-			ImGui::Image((void*)(intptr_t)image_textureo, ImVec2(newwidth, newheight));
+			float newwidth = ImGui::GetContentRegionAvail().x / 2.f - GImGui->Style.ItemSpacing.x;
+			float newheight = newwidth * ((float)jpeg->height / (float)jpeg->width);
+			
+			bool usescrollbool = false;
+			ImGui::Image((void*)(intptr_t)image_textureo, ImVec2(newwidth, newheight),
+				uv_min, uv_max, tint_col, border_col);
 			if (usezoom)
-				zoomlayer(image_textureo, jpeg, zoomv, magnifiersize, windowWidth, windowHeight);
+				usescrollbool = zoom_layer(image_textureo_zoom, jpeg, zoomv, magnifiersize, windowWidth, windowHeight);
 
 			ImGui::SameLine();
-			ImGui::Image((void*)(intptr_t)image_texturef, ImVec2(newwidth, newheight));
+			ImGui::Image((void*)(intptr_t)image_texturef, ImVec2(newwidth, newheight),
+				uv_min, uv_max, tint_col, border_col);
 			if (usezoom)
-				zoomlayer(image_texturef, jpeg, zoomv, magnifiersize, windowWidth, windowHeight);
+				usescrollbool = zoom_layer(image_texturef_zoom, jpeg, zoomv, magnifiersize, windowWidth, windowHeight);
+
+			if (usescrollbool)
+				usescroll = ImGuiWindowFlags_NoScrollWithMouse;
+			else
+				usescroll = ImGuiWindowFlags_None;
 		}
 		ImGui::End();
 
@@ -319,26 +332,25 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 		glfwSwapBuffers(glfwWindow);
 	}
 
+	if (jpeg != nullptr)
+	{
+		if (jpeg->original_image)
+		{
+			deletemod(&jpeg->original_image);
+			deletemod(&jpeg->final_image);
+			for (int i = 0; i < 3; i++)
+				deletemod(&jpeg->YCbCr[i]);
+			deletemod(&jpeg->YCbCr);
+			deletemod(&jpeg);
+		}
+	}
+
 	ImGui_ImplOpenGL3_Shutdown();
 	ImGui_ImplGlfw_Shutdown();
 	ImGui::DestroyContext();
 
 	glfwDestroyWindow(glfwWindow);
 	glfwTerminate();
-
-	if (jpeg != nullptr)
-	{
-		if (jpeg->originalimage)
-		{
-			delete jpeg->originalimage;
-			delete jpeg->finalimage;
-			for (int i = 0; i < 3; i++)
-				delete jpeg->YCbCr[i];
-			delete jpeg->YCbCr;
-			delete jpeg;
-			delete root;
-		}
-	}
 
 	return 0;
 }

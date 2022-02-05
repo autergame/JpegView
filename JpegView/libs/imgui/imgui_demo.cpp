@@ -996,6 +996,7 @@ static void ShowDemoWindowWidgets()
                 ImGui::EndTooltip();
             }
         }
+
         ImGui::TextWrapped("And now some textured buttons..");
         static int pressed_count = 0;
         for (int i = 0; i < 8; i++)
