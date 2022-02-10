@@ -83,6 +83,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 	bool jpegcomp = true;
 	bool drawline = true;
 	bool quadtree = false;
+	bool quadtreepo2 = false;
 
 	GLuint image_textureo;
 	GLuint image_texturef;
@@ -93,9 +94,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 	ImVec2 uv_max = ImVec2(1.f, 1.f);
 
 	int quality = 90, block_size = 8;
-	int max_depth = 10, threshold_error = 5, min_size = 8;
+	int max_depth = 10, threshold_error = 5, min_size = 8, max_size = 32;
 
-	int max_depthmax = 100, threshold_errormax = 100, min_sizemax = 100;
+	int max_depthmax = 100, threshold_errormax = 100, min_sizemax = 128, max_sizemax = 256;
 
 	JpegView* jpeg = nullptr;
 	int swidth, sheight, schannels;
@@ -105,6 +106,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
 	char openFile[MAX_PATH] = { '\0' };
 	char saveFile[MAX_PATH] = { '\0' };
+	char openFile_temp[MAX_PATH] = { '\0' };
 
 #define TESTBIN
 #if defined TESTBIN && defined _DEBUG
@@ -157,11 +159,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 			{
 				OPENFILENAMEA ofn;
 				memset(&ofn, 0, sizeof(ofn));
-				memset(openFile, 0, MAX_PATH);
+				memset(openFile_temp, 0, MAX_PATH);
 
 				ofn.lStructSize = sizeof(ofn);
 				ofn.hwndOwner = glfwWindowNative;
-				ofn.lpstrFile = openFile;
+				ofn.lpstrFile = openFile_temp;
 				ofn.nMaxFile = MAX_PATH;
 				ofn.lpstrFilter = "Image files (*.jpg;*.jpeg;*.png;*.bmp)\0*.jpg;*.jpeg;*.png;*.bmp\0";
 				ofn.nFilterIndex = 1;
@@ -172,19 +174,24 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
 				if (GetOpenFileNameA(&ofn) == TRUE)
 				{
-					if (openFile[0] != '\0')
+					if (openFile_temp[0] != '\0')
 					{
+						memset(openFile, 0, MAX_PATH);
+						memcpy(openFile, openFile_temp, MAX_PATH);
+
 						if (jpeg != nullptr)
 						{
-							if (jpeg->original_image)
-							{
-								deletemod(&jpeg->original_image);
-								deletemod(&jpeg->final_image);
-								for (int i = 0; i < 3; i++)
-									deletemod(&jpeg->YCbCr[i]);
-								deletemod(&jpeg->YCbCr);
-								deletemod(&jpeg);
-							}
+							deletemod(&jpeg->original_image);
+							deletemod(&jpeg->final_image);
+							for (int i = 0; i < 3; i++)
+								deletemod(&jpeg->YCbCr[i]);
+							deletemod(&jpeg->YCbCr);
+							deletemod(&jpeg);
+
+							glDeleteTextures(1, &image_textureo);
+							glDeleteTextures(1, &image_texturef);
+							glDeleteTextures(1, &image_textureo_zoom);
+							glDeleteTextures(1, &image_texturef_zoom);
 						}
 
 						uint8_t* img = stbi_load(openFile, &swidth, &sheight, &schannels, 3);
@@ -201,7 +208,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 					}
 				}
 			}
-			if (openFile[0] != 0)
+			if (openFile[0] != '\0')
 			{
 				if (ImGui::MenuItem("Save image"))
 				{
@@ -214,11 +221,13 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 					ofn.lpstrFile = saveFile;
 					ofn.nMaxFile = MAX_PATH;
 					ofn.lpstrFilter = "Image file (*.png)\0*.png\0";
+					ofn.lpstrDefExt = "png";
 					ofn.nFilterIndex = 1;
 					ofn.lpstrFileTitle = nullptr;
 					ofn.nMaxFileTitle = 0;
 					ofn.lpstrInitialDir = nullptr;
 					ofn.Flags = OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+
 					if (GetSaveFileNameA(&ofn) == TRUE)
 					{
 						stbi_write_png(saveFile, jpeg->width, jpeg->height, 3, jpeg->final_image, 0);
@@ -227,33 +236,61 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 			}
 			ImGui::EndMenuBar();
 		}
-		if (openFile[0] != 0 && jpeg != nullptr)
+		Start:
+		if (openFile[0] != '\0')
 		{
+			if (jpeg != nullptr)
+			{
+				ImGui::AlignTextToFramePadding();
+				ImGui::Text("File: %s", openFile); ImGui::SameLine();
+				ImGui::Text("Image Size: %d %d", jpeg->width, jpeg->height); ImGui::SameLine();
+				if (ImGui::Button("Close Image"))
+				{
+					if (jpeg != nullptr)
+					{
+						memset(openFile, 0, MAX_PATH);
+
+						deletemod(&jpeg->original_image);
+						deletemod(&jpeg->final_image);
+						for (int i = 0; i < 3; i++)
+							deletemod(&jpeg->YCbCr[i]);
+						deletemod(&jpeg->YCbCr);
+						deletemod(&jpeg);
+
+						glDeleteTextures(1, &image_textureo);
+						glDeleteTextures(1, &image_texturef);
+						glDeleteTextures(1, &image_textureo_zoom);
+						glDeleteTextures(1, &image_texturef_zoom);
+
+						goto Start;
+					}
+				}
+			}
+
 			ImGui::AlignTextToFramePadding();
 			ImGui::Checkbox("Use Jpeg?", &jpegcomp); ImGui::SameLine();
-			ImGui::Text("Factor:"); ImGui::SameLine();
+			ImGui::Text("Quality Factor:"); ImGui::SameLine();
 			ImGui::DragInt("##inputf", &quality, 1.f, 1, 100); ImGui::SameLine();
 			ImGui::Text("Block Size:"); ImGui::SameLine();
-			ImGui::DragInt("##inputb", &block_size, 1.f, 1, 256);
+			ImGui::DragInt("##inputb", &block_size, 2.f, 2, 256);
 			ImGui::AlignTextToFramePadding(); ImGui::Bullet();
 			ImGui::Checkbox("Show Compression Rate?", &jpeg->compression_rate); ImGui::SameLine();
 			ImGui::Text("Quality Start:"); ImGui::SameLine();
-			ImGui::DragInt("##inputc", &jpeg->quality_start, 1.f, 1, 100);
-			if (jpegcomp)
-				quadtree = false;
+			ImGui::DragInt("##inputc", &jpeg->quality_start, 1.f, 0, 100);
 
 			ImGui::AlignTextToFramePadding();
 			ImGui::Checkbox("Use QuadTree?", &quadtree); ImGui::SameLine();
 			ImGui::Text("Max Depth:"); ImGui::SameLine();
-			ImGui::DragInt("##inputd", &max_depth, 1.f, 0, max_depthmax); ImGui::SameLine();
+			ImGui::DragInt("##inputd", &max_depth, 1.f, 1, max_depthmax); ImGui::SameLine();
 			ImGui::Text("Error Threshold:"); ImGui::SameLine();
 			ImGui::DragInt("##inpute", &threshold_error, 1.f, 0, threshold_errormax);
 			ImGui::AlignTextToFramePadding(); ImGui::Bullet();
 			ImGui::Text("Min Size:"); ImGui::SameLine();
-			ImGui::DragInt("##inputs", &min_size, 1.f, 0, min_sizemax); ImGui::SameLine();
-			ImGui::Checkbox("Draw Line Quad?", &drawline);
-
-			jpegcomp = !quadtree;
+			ImGui::DragInt("##inputmins", &min_size, 2.f, 2, min_sizemax); ImGui::SameLine();
+			ImGui::Text("Max Size:"); ImGui::SameLine();
+			ImGui::DragInt("##inputmaxs", &max_size, 2.f, 4, max_sizemax); ImGui::SameLine();
+			ImGui::Checkbox("Draw Line?", &drawline); ImGui::SameLine();
+			ImGui::Checkbox("Power Of 2", &quadtreepo2);
 
 			if (max_depth >= max_depthmax)
 			{
@@ -269,6 +306,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 			{
 				min_sizemax += 100;
 				min_size -= 10;
+			}
+			if (max_size >= max_sizemax)
+			{
+				max_sizemax += 100;
+				max_size -= 10;
 			}
 
 			ImGui::AlignTextToFramePadding();
@@ -294,33 +336,38 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 			{
 				if (quadtree && jpegcomp)
 				{
-
+					render_quadtree_jpeg(jpeg, max_depth, threshold_error,
+						min_size, max_size, drawline, quality);
 				}
 				else 
 				{
 					if (quadtree)
-						render_quadtree(jpeg, max_depth, threshold_error, min_size, drawline, image_texturef, image_texturef_zoom);
+						render_quadtree(jpeg, max_depth, threshold_error,
+							min_size, max_size, drawline, quadtreepo2);
 					if (jpegcomp)
-						render_jpeg(jpeg, block_size, quality, image_texturef, image_texturef_zoom);
+						render_jpeg(jpeg, block_size, quality);
 				}
+				image_to_opengl(jpeg, image_texturef, image_texturef_zoom);
 			}
 
 			float newwidth = ImGui::GetContentRegionAvail().x / 2.f - GImGui->Style.ItemSpacing.x;
 			float newheight = newwidth * ((float)jpeg->height / (float)jpeg->width);
 			
-			bool usescrollbool = false;
+			int dontusescroll = 0;
 			ImGui::Image((void*)(intptr_t)image_textureo, ImVec2(newwidth, newheight),
 				uv_min, uv_max, tint_col, border_col);
 			if (usezoom)
-				usescrollbool = zoom_layer(image_textureo_zoom, jpeg, zoomv, magnifiersize, windowWidth, windowHeight);
+				dontusescroll += zoom_layer(image_textureo_zoom, jpeg,
+					zoomv, magnifiersize, windowWidth, windowHeight);
 
 			ImGui::SameLine();
 			ImGui::Image((void*)(intptr_t)image_texturef, ImVec2(newwidth, newheight),
 				uv_min, uv_max, tint_col, border_col);
 			if (usezoom)
-				usescrollbool = zoom_layer(image_texturef_zoom, jpeg, zoomv, magnifiersize, windowWidth, windowHeight);
+				dontusescroll += zoom_layer(image_texturef_zoom, jpeg,
+					zoomv, magnifiersize, windowWidth, windowHeight);
 
-			if (usescrollbool)
+			if (dontusescroll > 0)
 				usescroll = ImGuiWindowFlags_NoScrollWithMouse;
 			else
 				usescroll = ImGuiWindowFlags_None;
@@ -334,15 +381,17 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
 	if (jpeg != nullptr)
 	{
-		if (jpeg->original_image)
-		{
-			deletemod(&jpeg->original_image);
-			deletemod(&jpeg->final_image);
-			for (int i = 0; i < 3; i++)
-				deletemod(&jpeg->YCbCr[i]);
-			deletemod(&jpeg->YCbCr);
-			deletemod(&jpeg);
-		}
+		deletemod(&jpeg->original_image);
+		deletemod(&jpeg->final_image);
+		for (int i = 0; i < 3; i++)
+			deletemod(&jpeg->YCbCr[i]);
+		deletemod(&jpeg->YCbCr);
+		deletemod(&jpeg);
+
+		glDeleteTextures(1, &image_textureo);
+		glDeleteTextures(1, &image_texturef);
+		glDeleteTextures(1, &image_textureo_zoom);
+		glDeleteTextures(1, &image_texturef_zoom);
 	}
 
 	ImGui_ImplOpenGL3_Shutdown();
