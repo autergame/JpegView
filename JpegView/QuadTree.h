@@ -221,11 +221,6 @@ void render_quadtree(JpegView* jpeg, int max_depth, int threshold_error,
 	clean_node(&root);
 }
 
-bool compare_quadtree(const quadnode* quad1, const quadnode* quad2)
-{
-	return quad1->boxb * quad1->boxr > quad2->boxb * quad2->boxr;
-}
-
 void render_quadtree_jpeg(JpegView* jpeg, int max_depth, int threshold_error,
 	int min_size, int max_size, bool drawline, int quality)
 {
@@ -236,14 +231,22 @@ void render_quadtree_jpeg(JpegView* jpeg, int max_depth, int threshold_error,
 
 	std::vector<quadnode*> list;
 	build_tree(root, list, jpeg->width, jpeg->height, max_depth, threshold_error, min_size, max_size);
-	std::sort(list.begin(), list.end(), &compare_quadtree);
 
-	int mwidth = list[0]->boxr;
-	int mheight = list[0]->boxb;
+	int mwidth = jpeg->width;
+	int mheight = jpeg->height;
 
-	while (mwidth % min_size != 0)
+	for (size_t i = 0; i < list.size(); i++)
+	{
+		quadnode* quad = list[i];
+		if (quad->boxr > mwidth)
+			mwidth = quad->boxr;
+		if (quad->boxb > mheight)
+			mheight = quad->boxb;
+	}
+
+	while (mwidth % max_depth != 0)
 		mwidth++;
-	while (mheight % min_size != 0)
+	while (mheight % max_depth != 0)
 		mheight++;
 
 	uint8_t** YCbCr = image_to_matrix(jpeg->original_image, jpeg->width, jpeg->height, mwidth, mheight);

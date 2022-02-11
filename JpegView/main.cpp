@@ -165,7 +165,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 				ofn.hwndOwner = glfwWindowNative;
 				ofn.lpstrFile = openFile_temp;
 				ofn.nMaxFile = MAX_PATH;
-				ofn.lpstrFilter = "Image files (*.jpg;*.jpeg;*.png;*.bmp)\0*.jpg;*.jpeg;*.png;*.bmp\0";
+				ofn.lpstrFilter = 
+					"Image Files (*.jpg;*.jpeg;*.png;*.bmp)\0*.jpg;*.jpeg;*.png;*.bmp\0"
+					"JPG Image (*.jpg;*.jpeg)\0*.jpg;*.jpeg\0"
+					"PNG Image (*.png)\0*.png\0"
+					"BMP Image (*.bmp)\0*.bmp\0"
+					"All Files (*.*)\0*.*\0";
 				ofn.nFilterIndex = 1;
 				ofn.lpstrFileTitle = nullptr;
 				ofn.nMaxFileTitle = 0;
@@ -220,7 +225,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 					ofn.hwndOwner = glfwWindowNative;
 					ofn.lpstrFile = saveFile;
 					ofn.nMaxFile = MAX_PATH;
-					ofn.lpstrFilter = "Image file (*.png)\0*.png\0";
+					ofn.lpstrFilter = "Image File (*.png)\0*.png\0";
 					ofn.lpstrDefExt = "png";
 					ofn.nFilterIndex = 1;
 					ofn.lpstrFileTitle = nullptr;
