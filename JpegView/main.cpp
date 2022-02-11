@@ -94,7 +94,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 	ImVec2 uv_max = ImVec2(1.f, 1.f);
 
 	int quality = 90, block_size = 8;
-	int max_depth = 10, threshold_error = 5, min_size = 8, max_size = 32;
+	int max_depth = 50, threshold_error = 5, min_size = 8, max_size = 32;
 
 	int max_depthmax = 100, threshold_errormax = 100, min_sizemax = 128, max_sizemax = 256;
 

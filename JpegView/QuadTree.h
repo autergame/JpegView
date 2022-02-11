@@ -28,7 +28,7 @@ float color_from_histogram(int* histr, int* histg, int* histb, int& r, int& g, i
 	float ge = weighted_average(histg, g);
 	float be = weighted_average(histb, b);
 
-	return re * 0.2989f + ge * 0.5870f + be * 0.1140f;
+	return (0.299f * re) + (0.587f * ge) + (0.114f * be);
 }
 
 struct quadnode
@@ -170,11 +170,6 @@ int next_power_of_2(int n)
 	return p;
 }
 
-bool compare_depth(const quadnode* quad1, const quadnode* quad2)
-{
-	return quad1->depth < quad2->depth;
-}
-
 void render_quadtree(JpegView* jpeg, int max_depth, int threshold_error,
 	int min_size, int max_size, bool drawline, bool quadtreepo2)
 {
@@ -197,16 +192,17 @@ void render_quadtree(JpegView* jpeg, int max_depth, int threshold_error,
 	for (size_t i = 0; i < list.size(); i++)
 	{
 		quadnode* quad = list[i];
-		quad->boxr = quad->boxr >= jpeg->width ? jpeg->width - 1 : quad->boxr;
-		quad->boxb = quad->boxb >= jpeg->height ? jpeg->height - 1 : quad->boxb;
 		for (int y = quad->boxt; y < quad->boxb; y++)
 		{
 			for (int x = quad->boxl; x < quad->boxr; x++)
 			{
-				int index = (y * jpeg->width + x) * 3;
-				jpeg->final_image[index + 0] = quad->r;
-				jpeg->final_image[index + 1] = quad->g;
-				jpeg->final_image[index + 2] = quad->b;
+				if (x < jpeg->width && y < jpeg->height)
+				{
+					int index = (y * jpeg->width + x) * 3;
+					jpeg->final_image[index + 0] = quad->r;
+					jpeg->final_image[index + 1] = quad->g;
+					jpeg->final_image[index + 2] = quad->b;
+				}
 			}
 		}
 	}
@@ -216,11 +212,18 @@ void render_quadtree(JpegView* jpeg, int max_depth, int threshold_error,
 		for (size_t i = 0; i < list.size(); i++)
 		{
 			quadnode* quad = list[i];
+			quad->boxr = quad->boxr >= jpeg->width ? jpeg->width - 1 : quad->boxr;
+			quad->boxb = quad->boxb >= jpeg->height ? jpeg->height - 1 : quad->boxb;
 			DrawRect(quad->boxl, quad->boxt, quad->boxr, quad->boxb, jpeg->final_image, jpeg->width, jpeg->height);
 		}
 	}
 
 	clean_node(&root);
+}
+
+bool compare_quadtree(const quadnode* quad1, const quadnode* quad2)
+{
+	return quad1->boxb * quad1->boxr > quad2->boxb * quad2->boxr;
 }
 
 void render_quadtree_jpeg(JpegView* jpeg, int max_depth, int threshold_error,
@@ -233,14 +236,22 @@ void render_quadtree_jpeg(JpegView* jpeg, int max_depth, int threshold_error,
 
 	std::vector<quadnode*> list;
 	build_tree(root, list, jpeg->width, jpeg->height, max_depth, threshold_error, min_size, max_size);
+	std::sort(list.begin(), list.end(), &compare_quadtree);
+
+	int mwidth = list[0]->boxr;
+	int mheight = list[0]->boxb;
+
+	while (mwidth % min_size != 0)
+		mwidth++;
+	while (mheight % min_size != 0)
+		mheight++;
+
+	uint8_t** YCbCr = image_to_matrix(jpeg->original_image, jpeg->width, jpeg->height, mwidth, mheight);
 
 	int tablesize = max_size / 2;
-	float** DCTTable = new float*[tablesize]{};
+	float** DCTTable = new float*[tablesize] {};
 	for (int i = 0; i < tablesize; i++)
-	{
-		int blocksize = 2 * (i + 1);
-		DCTTable[i] = generate_DCTtable(blocksize);
-	}
+		DCTTable[i] = generate_DCTtable(2 * (i + 1));
 
 	float* alpha = generate_Alphatable(max_size);
 
@@ -252,115 +263,108 @@ void render_quadtree_jpeg(JpegView* jpeg, int max_depth, int threshold_error,
 
 	float* qMatrix = generate_QMatrix(max_size, factor);
 
-	float** DCT = new float*[3]{};
-	for (int i = 0; i < 3; i++)
-		DCT[i] = new float[jpeg->height * jpeg->width]{};
+	float* DCTMatrix = new float[max_size * max_size]{};
 
-	jpeg->final_image = new uint8_t[jpeg->width * jpeg->height * 3]{};
+	uint8_t** result = new uint8_t*[3]{};
+	for (int i = 0; i < 3; i++)
+		result[i] = new uint8_t[mheight * mwidth]{};
+
 	for (size_t i = 0; i < list.size(); i++)
 	{
 		quadnode* quad = list[i];
-		if (quad->boxr >= jpeg->width) {
-			quad->boxr = jpeg->width - 1;
-			quad->width = quad->boxr - quad->boxl;
-		}
-		if (quad->boxb >= jpeg->height) {
-			quad->boxb = jpeg->height - 1;
-			quad->height = quad->boxb - quad->boxt;
-		}
 
-		float block = 2.f / (float)quad->width;
-		int tableindex = (next_power_of_2(quad->width) / 2) - 1;
+		int quadblocksize = quad->width > quad->height ? quad->width : quad->height;
 
-		for (int by = quad->boxt; by < quad->boxb; by += quad->height)
+		float block = 2.f / (float)quadblocksize;
+		int tableindex = (quadblocksize / 2) - 1;
+
+		for (int j = 0; j < 3; j++)
 		{
-			for (int bx = quad->boxl; bx < quad->boxr; bx += quad->width)
+			memset(DCTMatrix, 0, quadblocksize * quadblocksize);
+
+			for (int k = 0; k < quadblocksize * quadblocksize; k++)
 			{
-				for (int u = 0; u < quad->width; u++)
+				int u = (k % quadblocksize);
+				int v = (k / quadblocksize);
+
+				float sum = 0.0f;
+				for (int l = 0; l < quadblocksize * quadblocksize; l++)
 				{
-					for (int v = 0; v < quad->height; v++)
-					{
-						float sum1 = 0.0f;
-						float sum2 = 0.0f;
-						float sum3 = 0.0f;
-						for (int x = 0; x < quad->width; x++)
-						{
-							for (int y = 0; y < quad->height; y++)
-							{
-								int index = ((by + y) * jpeg->width + (bx + x)) * 3;
+					int x = (l % quadblocksize);
+					int y = (l / quadblocksize);
+					int index = (quad->boxt + y) * mwidth + (quad->boxl + x);
 
-								float yv = DCTTable[tableindex][y * quad->width + v];
-								float xu = DCTTable[tableindex][x * quad->width + u];
+					float yv = DCTTable[tableindex][y * quadblocksize + v];
+					float xu = DCTTable[tableindex][x * quadblocksize + u];
 
-								sum1 += (jpeg->original_image[index + 0] - 128.f) * yv * xu;
-								sum2 += (jpeg->original_image[index + 1] - 128.f) * yv * xu;
-								sum3 += (jpeg->original_image[index + 2] - 128.f) * yv * xu;
-							}
-						}
-
-						int index = (by + v) * jpeg->width + (bx + u);
-
-						DCT[0][index] = alpha[u * quad->width + v] * sum1 * block;
-						DCT[1][index] = alpha[u * quad->width + v] * sum2 * block;
-						DCT[2][index] = alpha[u * quad->width + v] * sum3 * block;
-					}
+					sum += (YCbCr[j][index] - 128.f) * yv * xu;
 				}
 
-				for (int y = 0; y < quad->height; y++)
-				{
-					for (int x = 0; x < quad->width; x++)
-					{
-						int index = (by + y) * jpeg->width + (bx + x);
-						int qindex = ((by + y) % quad->height) * quad->width + ((bx + x) % quad->width);
+				DCTMatrix[v * max_size + u] = alpha[v * max_size + u] * sum * block;
+			}
 
-						float qMatrix_value = minmaxq(qMatrix[qindex]);
-						DCT[0][index] = roundf(DCT[0][index] / qMatrix_value) * qMatrix_value;
-						DCT[1][index] = roundf(DCT[1][index] / qMatrix_value) * qMatrix_value;
-						DCT[2][index] = roundf(DCT[2][index] / qMatrix_value) * qMatrix_value;
-					}
+			for (int k = 0; k < quadblocksize * quadblocksize; k++)
+			{
+				int x = (k % quadblocksize);
+				int y = (k / quadblocksize);
+				int index = y * max_size + x;
+
+				float qMatrix_value = minmaxq(qMatrix[index]);
+				DCTMatrix[index] = roundf(DCTMatrix[index] / qMatrix_value) * qMatrix_value;
+			}
+
+			for (int k = 0; k < quadblocksize * quadblocksize; k++)
+			{
+				int x = (k % quadblocksize);
+				int y = (k / quadblocksize);
+
+				float sum = 0.f;
+				for (int l = 0; l < quadblocksize * quadblocksize; l++)
+				{
+					int u = (l % quadblocksize);
+					int v = (l / quadblocksize);
+
+					float yv = DCTTable[tableindex][y * quadblocksize + v];
+					float xu = DCTTable[tableindex][x * quadblocksize + u];
+		
+					sum += alpha[v * max_size + u] * DCTMatrix[v * max_size + u] * yv * xu;
 				}
 
-				for (int x = 0; x < quad->width; x++)
-				{
-					for (int y = 0; y < quad->height; y++)
-					{
-						float isum1 = 0.f;
-						float isum2 = 0.f;
-						float isum3 = 0.f;
-						for (int u = 0; u < quad->width; u++)
-						{
-							for (int v = 0; v < quad->height; v++)
-							{
-								int index = (by + v) * jpeg->width + (bx + u);
-
-								float yv = DCTTable[tableindex][y * quad->width + v];
-								float xu = DCTTable[tableindex][x * quad->width + u];
-
-								isum1 += alpha[u * quad->width + v] * DCT[0][index] * yv * xu;
-								isum2 += alpha[u * quad->width + v] * DCT[1][index] * yv * xu;
-								isum3 += alpha[u * quad->width + v] * DCT[2][index] * yv * xu;
-							}
-						}
-
-						int index = ((by + y) * jpeg->width + (bx + x)) * 3;
-
-						jpeg->final_image[index + 0] = minmaxcolor((isum1 * block) + 128.f);
-						jpeg->final_image[index + 1] = minmaxcolor((isum2 * block) + 128.f);
-						jpeg->final_image[index + 2] = minmaxcolor((isum3 * block) + 128.f);
-					}
-				}
+				int index = (quad->boxt + y) * mwidth + (quad->boxl + x);
+				result[j][index] = minmaxcolor((sum * block) + 128.f);
 			}
 		}
 	}
+
+	jpeg->final_image = matrix_to_image(result, jpeg->width, jpeg->height, mwidth);
 
 	if (drawline)
 	{
 		for (size_t i = 0; i < list.size(); i++)
 		{
 			quadnode* quad = list[i];
+			quad->boxr = quad->boxr >= jpeg->width ? jpeg->width - 1 : quad->boxr;
+			quad->boxb = quad->boxb >= jpeg->height ? jpeg->height - 1 : quad->boxb;
 			DrawRect(quad->boxl, quad->boxt, quad->boxr, quad->boxb, jpeg->final_image, jpeg->width, jpeg->height);
 		}
 	}
 
 	clean_node(&root);
+
+	deletemod(&alpha);
+	deletemod(&qMatrix);
+	deletemod(&DCTMatrix);
+
+	for (int i = 0; i < tablesize; i++)
+		deletemod(&DCTTable[i]);
+	deletemod(&DCTTable);
+
+	for (int i = 0; i < 3; i++)
+	{
+		deletemod(&YCbCr[i]);
+		deletemod(&result[i]);
+	}
+
+	deletemod(&YCbCr);
+	deletemod(&result);	
 }
