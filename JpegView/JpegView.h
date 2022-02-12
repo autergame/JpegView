@@ -296,10 +296,10 @@ float** DCT(uint8_t** YCbCr, float* DCTTable, JpegView* jpeg)
                     int y = (k / jpeg->block_size);
                     int index = (by + y) * jpeg->mwidth + (bx + x);
 
-                    float yv = DCTTable[y * jpeg->block_size + v];
                     float xu = DCTTable[x * jpeg->block_size + u];
+                    float yv = DCTTable[y * jpeg->block_size + v];
 
-                    sum += (YCbCr[i][index] - 128.f) * yv * xu;
+                    sum += (YCbCr[i][index] - 128.f) * xu * yv;
                 }
 
                 int index = (by + v) * jpeg->mwidth + (bx + u);
@@ -340,10 +340,10 @@ uint8_t** inverse_DCT(float** DCT, float* DCTTable, JpegView* jpeg)
                     int v = (k / jpeg->block_size);
                     int index = (by + v) * jpeg->mwidth + (bx + u);
 
-                    float yv = DCTTable[y * jpeg->block_size + v];
                     float xu = DCTTable[x * jpeg->block_size + u];
+                    float yv = DCTTable[y * jpeg->block_size + v];
 
-                    sum += alpha[k] * DCT[i][index] * yv * xu;
+                    sum += alpha[k] * DCT[i][index] * xu * yv;
                 }
 
                 int index = (by + y) * jpeg->mwidth + (bx + x);

@@ -225,7 +225,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 					ofn.hwndOwner = glfwWindowNative;
 					ofn.lpstrFile = saveFile;
 					ofn.nMaxFile = MAX_PATH;
-					ofn.lpstrFilter = "Image File (*.png)\0*.png\0";
+					ofn.lpstrFilter = "PNG Image (*.png)\0*.png\0";
 					ofn.lpstrDefExt = "png";
 					ofn.nFilterIndex = 1;
 					ofn.lpstrFileTitle = nullptr;

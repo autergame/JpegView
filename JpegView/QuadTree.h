@@ -264,7 +264,12 @@ void render_quadtree_jpeg(JpegView* jpeg, int max_depth, int threshold_error,
 	else
 		factor = 5000.f / factor;
 
-	float* qMatrix = generate_QMatrix(max_size, factor);
+	float* qMatrix;
+	if (jpeg->compression_rate)
+		qMatrix = generate_QMatrix_nofactor(max_size);
+	else 
+		qMatrix = generate_QMatrix(max_size, factor);
+	float control = 100.f - jpeg->quality_start;
 
 	float* DCTMatrix = new float[max_size * max_size]{};
 
@@ -297,13 +302,14 @@ void render_quadtree_jpeg(JpegView* jpeg, int max_depth, int threshold_error,
 					int y = (l / quadblocksize);
 					int index = (quad->boxt + y) * mwidth + (quad->boxl + x);
 
-					float yv = DCTTable[tableindex][y * quadblocksize + v];
 					float xu = DCTTable[tableindex][x * quadblocksize + u];
+					float yv = DCTTable[tableindex][y * quadblocksize + v];
 
-					sum += (YCbCr[j][index] - 128.f) * yv * xu;
+					sum += (YCbCr[j][index] - 128.f) * xu * yv;
 				}
 
-				DCTMatrix[v * max_size + u] = alpha[v * max_size + u] * sum * block;
+				int index = v * max_size + u;
+				DCTMatrix[index] = alpha[index] * sum * block;
 			}
 
 			for (int k = 0; k < quadblocksize * quadblocksize; k++)
@@ -312,7 +318,21 @@ void render_quadtree_jpeg(JpegView* jpeg, int max_depth, int threshold_error,
 				int y = (k / quadblocksize);
 				int index = y * max_size + x;
 
-				float qMatrix_value = minmaxq(qMatrix[index]);
+				float qMatrix_value = 0;
+				if (jpeg->compression_rate)
+				{
+					float factor = jpeg->quality_start + ((float)(quad->boxl + x) / (float)mwidth) * control;
+					if (factor >= 50.f)
+						factor = 200.f - factor * 2.f;
+					else
+						factor = 5000.f / factor;
+
+					qMatrix_value = minmaxq(1.f + qMatrix[index] * factor);
+				}
+				else {
+					qMatrix_value = minmaxq(qMatrix[index]);
+				}
+
 				DCTMatrix[index] = roundf(DCTMatrix[index] / qMatrix_value) * qMatrix_value;
 			}
 
@@ -327,10 +347,11 @@ void render_quadtree_jpeg(JpegView* jpeg, int max_depth, int threshold_error,
 					int u = (l % quadblocksize);
 					int v = (l / quadblocksize);
 
-					float yv = DCTTable[tableindex][y * quadblocksize + v];
 					float xu = DCTTable[tableindex][x * quadblocksize + u];
+					float yv = DCTTable[tableindex][y * quadblocksize + v];
 		
-					sum += alpha[v * max_size + u] * DCTMatrix[v * max_size + u] * yv * xu;
+					int index = v * max_size + u;
+					sum += alpha[index] * DCTMatrix[index] * xu * yv;
 				}
 
 				int index = (quad->boxt + y) * mwidth + (quad->boxl + x);
