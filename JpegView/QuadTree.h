@@ -269,7 +269,7 @@ void render_quadtree_jpeg(JpegView* jpeg, int max_depth, int threshold_error,
 		qMatrix = generate_QMatrix_nofactor(max_size);
 	else 
 		qMatrix = generate_QMatrix(max_size, factor);
-	float control = 100.f - jpeg->quality_start;
+	float Q_control = 100.f - jpeg->quality_start;
 
 	float* DCTMatrix = new float[max_size * max_size]{};
 
@@ -288,75 +288,9 @@ void render_quadtree_jpeg(JpegView* jpeg, int max_depth, int threshold_error,
 
 		for (int j = 0; j < 3; j++)
 		{
-			memset(DCTMatrix, 0, quadblocksize * quadblocksize);
-
-			for (int k = 0; k < quadblocksize * quadblocksize; k++)
-			{
-				int u = (k % quadblocksize);
-				int v = (k / quadblocksize);
-
-				float sum = 0.0f;
-				for (int l = 0; l < quadblocksize * quadblocksize; l++)
-				{
-					int x = (l % quadblocksize);
-					int y = (l / quadblocksize);
-					int index = (quad->boxt + y) * mwidth + (quad->boxl + x);
-
-					float xu = DCTTable[tableindex][x * quadblocksize + u];
-					float yv = DCTTable[tableindex][y * quadblocksize + v];
-
-					sum += (YCbCr[j][index] - 128.f) * xu * yv;
-				}
-
-				int index = v * max_size + u;
-				DCTMatrix[index] = alpha[index] * sum * block;
-			}
-
-			for (int k = 0; k < quadblocksize * quadblocksize; k++)
-			{
-				int x = (k % quadblocksize);
-				int y = (k / quadblocksize);
-				int index = y * max_size + x;
-
-				float qMatrix_value = 0;
-				if (jpeg->compression_rate)
-				{
-					float factor = jpeg->quality_start + ((float)(quad->boxl + x) / (float)mwidth) * control;
-					if (factor >= 50.f)
-						factor = 200.f - factor * 2.f;
-					else
-						factor = 5000.f / factor;
-
-					qMatrix_value = minmaxq(1.f + qMatrix[index] * factor);
-				}
-				else {
-					qMatrix_value = minmaxq(qMatrix[index]);
-				}
-
-				DCTMatrix[index] = roundf(DCTMatrix[index] / qMatrix_value) * qMatrix_value;
-			}
-
-			for (int k = 0; k < quadblocksize * quadblocksize; k++)
-			{
-				int x = (k % quadblocksize);
-				int y = (k / quadblocksize);
-
-				float sum = 0.f;
-				for (int l = 0; l < quadblocksize * quadblocksize; l++)
-				{
-					int u = (l % quadblocksize);
-					int v = (l / quadblocksize);
-
-					float xu = DCTTable[tableindex][x * quadblocksize + u];
-					float yv = DCTTable[tableindex][y * quadblocksize + v];
-		
-					int index = v * max_size + u;
-					sum += alpha[index] * DCTMatrix[index] * xu * yv;
-				}
-
-				int index = (quad->boxt + y) * mwidth + (quad->boxl + x);
-				result[j][index] = minmaxcolor((sum * block) + 128.f);
-			}
+			JPEG_steps(DCTMatrix, DCTTable[tableindex], alpha, qMatrix, quadblocksize, max_size,
+				mwidth, block, quad->boxl, quad->boxt, jpeg->compression_rate, jpeg->quality_start,
+				Q_control, result[j], YCbCr[j]);
 		}
 	}
 
