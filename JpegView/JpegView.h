@@ -193,151 +193,163 @@ float* generate_DCTtable(int block_size)
 
 float* generate_Alphatable(int block_size)
 {
-    float* alpha = new float[block_size * block_size]{};
-    for (int y = 1; y < block_size; y++)
+    float sqrt1_2 = 1.f / sqrtf(2.f);
+    float* alphaTable = new float[block_size * block_size]{};
+    for (int y = 0; y < block_size; y++)
     {
-        for (int x = 1; x < block_size; x++)
+        for (int x = 0; x < block_size; x++)
         {
-            alpha[y * block_size + x] = 1.f;
+            alphaTable[y * block_size + x] = (y == 0 ? sqrt1_2 : 1.f) * (x == 0 ? sqrt1_2 : 1.f);
         }
     }
-
-    float sqrt1_2 = 1.f / sqrtf(2.f);
-
-    for (int x = 1; x < block_size; x++)
-        alpha[x] = sqrt1_2;
-
-    for (int y = 1; y < block_size; y++)
-        alpha[y * block_size] = sqrt1_2;
-
-    alpha[0] = sqrt1_2 * sqrt1_2;
-
-    return alpha;
+    return alphaTable;
 }
 
-void DCT_function(float* DCTMatrix, float* DCTTable, float* alpha,
-    int block_size, int dctalpha_size, int width, float block, int start_x, int start_y, uint8_t* YCbCr)
+struct jpeg_steps_struct
 {
-    for (int k = 0; k < block_size * block_size; k++)
+    float* DCTMatrix;
+    float* DCTTable;
+    float* alphaTable;
+    float* qMatrix;
+    int block_size;
+    int dctalpha_size;
+    int mwidth;
+    float block;
+    int start_x;
+    int start_y;
+    bool compression_rate;
+    int quality_start;
+    float Q_control;
+};
+
+void DCT_function(jpeg_steps_struct* jss, uint8_t* YCbCr)
+{
+    for (int k = 0; k < jss->block_size * jss->block_size; k++)
     {
-        int u = (k % block_size);
-        int v = (k / block_size);
+        int u = (k % jss->block_size);
+        int v = (k / jss->block_size);
 
         float sum = 0.0f;
-        for (int l = 0; l < block_size * block_size; l++)
+        for (int l = 0; l < jss->block_size * jss->block_size; l++)
         {
-            int x = (l % block_size);
-            int y = (l / block_size);
-            int index = (start_y + y) * width + (start_x + x);
+            int x = (l % jss->block_size);
+            int y = (l / jss->block_size);
+            int index = (jss->start_y + y) * jss->mwidth + (jss->start_x + x);
 
-            float xu = DCTTable[x * block_size + u];
-            float yv = DCTTable[y * block_size + v];
+            float xu = jss->DCTTable[x * jss->block_size + u];
+            float yv = jss->DCTTable[y * jss->block_size + v];
 
             sum += (YCbCr[index] - 128.f) * xu * yv;
         }
 
-        int index = v * dctalpha_size + u;
-        DCTMatrix[index] = alpha[index] * sum * block;
+        int index = v * jss->dctalpha_size + u;
+        jss->DCTMatrix[index] = jss->alphaTable[index] * sum * jss->block;
     }
 }
 
-void Quantize_function(float* DCTMatrix, float* qMatrix,
-    int block_size, int dctalpha_size, int start_x, int width, bool compression_rate, int quality_start, float Q_control)
+void Quantize_function(jpeg_steps_struct* jss)
 {
-    for (int k = 0; k < block_size * block_size; k++)
+    for (int k = 0; k < jss->block_size * jss->block_size; k++)
     {
-        int x = (k % block_size);
-        int y = (k / block_size);
-        int index = y * dctalpha_size + x;
+        int x = (k % jss->block_size);
+        int y = (k / jss->block_size);
+        int index = y * jss->dctalpha_size + x;
 
         float qMatrix_value = 0;
-        if (compression_rate)
+        if (jss->compression_rate)
         {
-            float factor = quality_start + ((float)(start_x + x) / (float)width) * Q_control;
+            float factor = jss->quality_start + ((float)(jss->start_x + x) / (float)jss->mwidth) * jss->Q_control;
             if (factor >= 50.f)
                 factor = 200.f - factor * 2.f;
             else
                 factor = 5000.f / factor;
 
-            qMatrix_value = minmaxq(1.f + qMatrix[index] * factor);
+            qMatrix_value = minmaxq(1.f + jss->qMatrix[index] * factor);
         }
         else {
-            qMatrix_value = minmaxq(qMatrix[index]);
+            qMatrix_value = minmaxq(jss->qMatrix[index]);
         }
 
-        DCTMatrix[index] = roundf(DCTMatrix[index] / qMatrix_value) * qMatrix_value;
+        jss->DCTMatrix[index] = roundf(jss->DCTMatrix[index] / qMatrix_value) * qMatrix_value;
     }
 }
 
-void inverse_DCT_function(float* DCTMatrix, float* DCTTable, float* alpha,
-    int block_size, int dctalpha_size, int width, float block, int start_x, int start_y, uint8_t* result)
+void inverse_DCT_function(jpeg_steps_struct* jss, uint8_t* result)
 {
-    for (int k = 0; k < block_size * block_size; k++)
+    for (int k = 0; k < jss->block_size * jss->block_size; k++)
     {
-        int x = (k % block_size);
-        int y = (k / block_size);
+        int x = (k % jss->block_size);
+        int y = (k / jss->block_size);
 
         float sum = 0.f;
-        for (int l = 0; l < block_size * block_size; l++)
+        for (int l = 0; l < jss->block_size * jss->block_size; l++)
         {
-            int u = (l % block_size);
-            int v = (l / block_size);
+            int u = (l % jss->block_size);
+            int v = (l / jss->block_size);
 
-            float xu = DCTTable[x * block_size + u];
-            float yv = DCTTable[y * block_size + v];
+            float xu = jss->DCTTable[x * jss->block_size + u];
+            float yv = jss->DCTTable[y * jss->block_size + v];
 
-            int index = v * dctalpha_size + u;
-            sum += alpha[index] * DCTMatrix[index] * xu * yv;
+            int index = v * jss->dctalpha_size + u;
+            sum += jss->alphaTable[index] * jss->DCTMatrix[index] * xu * yv;
         }
 
-        int index = (start_y + y) * width + (start_x + x);
-        result[index] = minmaxcolor((sum * block) + 128.f);
+        int index = (jss->start_y + y) * jss->mwidth + (jss->start_x + x);
+        result[index] = minmaxcolor((sum * jss->block) + 128.f);
     }
 }
 
-void JPEG_steps(float* DCTMatrix, float* DCTTable, float* alpha, float* qMatrix,
-    int block_size, int dctalpha_size, int width, float block, int start_x, int start_y,
-    bool compression_rate, int quality_start, float Q_control, uint8_t* result, uint8_t* YCbCr)
+void JPEG_steps(jpeg_steps_struct* jss, uint8_t* result, uint8_t* YCbCr)
 {
-    DCT_function(DCTMatrix, DCTTable, alpha,
-        block_size, dctalpha_size, width, block, start_x, start_y, YCbCr);
-
-    Quantize_function(DCTMatrix, qMatrix,
-        block_size, dctalpha_size, start_x, width, compression_rate, quality_start, Q_control);
-
-    inverse_DCT_function(DCTMatrix, DCTTable, alpha,
-        block_size, dctalpha_size, width, block, start_x, start_y, result);
+    DCT_function(jss, YCbCr);
+    Quantize_function(jss);
+    inverse_DCT_function(jss, result);
 }
 
 uint8_t** Encode(uint8_t** YCbCr, float* qMatrix,
-    int block_size, int dctalpha_size, int width, int height,
-    bool compression_rate, int quality_start, float Q_control)
+    int block_size, int mwidth, int mheight, bool compression_rate, int quality_start, float Q_control)
 {
     float block = 2.f / (float)block_size;
-    int width_blocks = width / block_size;
-    int height_blocks = height / block_size;
+    int width_blocks = mwidth / block_size;
+    int height_blocks = mheight / block_size;
 
-    float* alpha = generate_Alphatable(block_size);
-    float* DCTTable = generate_DCTtable(block_size);
     float* DCTMatrix = new float[block_size * block_size]{};
+    float* DCTTable = generate_DCTtable(block_size);
+    float* alphaTable = generate_Alphatable(block_size);
+
+    jpeg_steps_struct* jss = new jpeg_steps_struct{};
+    jss->DCTMatrix = DCTMatrix;
+    jss->DCTTable = DCTTable;
+    jss->alphaTable = alphaTable;
+    jss->qMatrix = qMatrix;
+    jss->dctalpha_size = block_size;
+    jss->mwidth = mwidth;
+    jss->compression_rate = compression_rate;
+    jss->quality_start = quality_start;
+    jss->Q_control = Q_control;
+    jss->block_size = block_size;
+    jss->block = 2.f / (float)block_size;
 
     uint8_t** result = new uint8_t*[3]{};
     for (int i = 0; i < 3; i++)
     {
-        result[i] = new uint8_t[height * width]{};
+        result[i] = new uint8_t[mheight * mwidth]{};
 
         for (int byx = 0; byx < height_blocks * width_blocks; byx++)
         {
             int bx = (byx % width_blocks) * block_size;
             int by = (byx / width_blocks) * block_size;
 
-            JPEG_steps(DCTMatrix, DCTTable, alpha, qMatrix, block_size, block_size,
-                width, block, bx, by, compression_rate, quality_start, Q_control, result[i], YCbCr[i]);
+            jss->start_x = bx;
+            jss->start_y = by;
+
+            JPEG_steps(jss, result[i], YCbCr[i]);
         }
     }
 
-    deletemod(&alpha);
+    deletemod(&jss);
     deletemod(&DCTTable);
+    deletemod(&alphaTable);
     deletemod(&DCTMatrix);
     return result;
 }
@@ -348,24 +360,18 @@ uint8_t** image_to_matrix(uint8_t* original_image, int width, int height, int mw
     for (int i = 0; i < 3; i++) 
     {
         result[i] = new uint8_t[mheight * mwidth]{};
-        if (width != mwidth)
+        for (int y = 0; y < mheight; y++)
         {
-            for (int y = 0; y < mheight; y++)
+            for (int x = width; x < mwidth; x++)
             {
-                for (int x = width; x < mwidth; x++)
-                {
-                    result[i][y * mwidth + x] = 0x80;
-                }
+                result[i][y * mwidth + x] = 0x80;
             }
         }
-        if (height != mheight)
+        for (int y = height; y < mheight; y++)
         {
-            for (int y = height; y < mheight; y++)
+            for (int x = 0; x < mwidth; x++)
             {
-                for (int x = 0; x < mwidth; x++)
-                {
-                    result[i][y * mwidth + x] = 0x80;
-                }
+                result[i][y * mwidth + x] = 0x80;
             }
         }
     }
@@ -427,8 +433,7 @@ void compress(JpegView* jpeg, float factor)
     }
 
     uint8_t** YCbCrmodified = Encode(jpeg->YCbCr, qMatrix,
-        jpeg->block_size, jpeg->block_size, jpeg->mwidth, jpeg->mheight, 
-        jpeg->compression_rate, jpeg->quality_start, Q_control);
+        jpeg->block_size, jpeg->mwidth, jpeg->mheight, jpeg->compression_rate, jpeg->quality_start, Q_control);
     
     jpeg->final_image = matrix_to_image(YCbCrmodified, jpeg->width, jpeg->height, jpeg->mwidth);
 

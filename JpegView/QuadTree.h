@@ -256,7 +256,7 @@ void render_quadtree_jpeg(JpegView* jpeg, int max_depth, int threshold_error,
 	for (int i = 0; i < tablesize; i++)
 		DCTTable[i] = generate_DCTtable(2 * (i + 1));
 
-	float* alpha = generate_Alphatable(max_size);
+	float* alphaTable = generate_Alphatable(max_size);
 
 	float factor = (float)quality;
 	if (factor >= 50.f)
@@ -277,20 +277,33 @@ void render_quadtree_jpeg(JpegView* jpeg, int max_depth, int threshold_error,
 	for (int i = 0; i < 3; i++)
 		result[i] = new uint8_t[mheight * mwidth]{};
 
+	jpeg_steps_struct* jss = new jpeg_steps_struct{};
+	jss->DCTMatrix = DCTMatrix;
+	jss->alphaTable = alphaTable;
+	jss->qMatrix = qMatrix;
+	jss->dctalpha_size = max_size;
+	jss->mwidth = mwidth;
+	jss->compression_rate = jpeg->compression_rate;
+	jss->quality_start = jpeg->quality_start;
+	jss->Q_control = Q_control;
+
 	for (size_t i = 0; i < list.size(); i++)
 	{
 		quadnode* quad = list[i];
 
 		int quadblocksize = quad->width > quad->height ? quad->width : quad->height;
 
-		float block = 2.f / (float)quadblocksize;
 		int tableindex = (quadblocksize / 2) - 1;
+
+		jss->DCTTable = DCTTable[tableindex];
+		jss->block_size = quadblocksize;
+		jss->block = 2.f / (float)quadblocksize;
+		jss->start_x = quad->boxl;
+		jss->start_y = quad->boxt;
 
 		for (int j = 0; j < 3; j++)
 		{
-			JPEG_steps(DCTMatrix, DCTTable[tableindex], alpha, qMatrix, quadblocksize, max_size,
-				mwidth, block, quad->boxl, quad->boxt, jpeg->compression_rate, jpeg->quality_start,
-				Q_control, result[j], YCbCr[j]);
+			JPEG_steps(jss, result[j], YCbCr[j]);
 		}
 	}
 
@@ -309,9 +322,10 @@ void render_quadtree_jpeg(JpegView* jpeg, int max_depth, int threshold_error,
 
 	clean_node(&root);
 
-	deletemod(&alpha);
+	deletemod(&jss);
 	deletemod(&qMatrix);
 	deletemod(&DCTMatrix);
+	deletemod(&alphaTable);
 
 	for (int i = 0; i < tablesize; i++)
 		deletemod(&DCTTable[i]);
