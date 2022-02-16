@@ -41,7 +41,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 
 	GLFWwindow* glfwWindow = glfwCreateWindow(windowWidth, windowHeight, "JpegView", nullptr, nullptr);
 
-    glfwMakeContextCurrent(glfwWindow);
+	glfwMakeContextCurrent(glfwWindow);
 	glfwSwapInterval(0);
 
 	glfwSetWindowPos(glfwWindow, windowPosX, windowPosY);
@@ -81,6 +81,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 
 	bool usezoom = true;
 	bool jpegcomp = true;
+	bool qtablege = true;
 	bool drawline = true;
 	bool quadtree = false;
 	bool quadtreepo2 = false;
@@ -115,7 +116,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 	if (img != nullptr)
 	{
 		memcpy(openFile, teststr, strlen(teststr));
-		jpeg = init_jpeg(img, swidth, sheight);
+		jpeg = init_jpeg(img, swidth, sheight, block_size);
 		image_textureo = create_image(img, swidth, sheight, true);
 		image_texturef = create_image(jpeg->final_image, swidth, sheight, true);
 		image_textureo_zoom = create_image(img, swidth, sheight, false);
@@ -202,7 +203,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 						uint8_t* img = stbi_load(openFile, &swidth, &sheight, &schannels, 3);
 						if (img != nullptr)
 						{
-							jpeg = init_jpeg(img, swidth, sheight);
+							jpeg = init_jpeg(img, swidth, sheight, block_size);
 							image_textureo = create_image(img, swidth, sheight, true);
 							image_texturef = create_image(jpeg->final_image, swidth, sheight, true);
 							image_textureo_zoom = create_image(img, swidth, sheight, false);
@@ -272,30 +273,77 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 				}
 			}
 
-			ImGui::AlignTextToFramePadding();
-			ImGui::Checkbox("Use Jpeg?", &jpegcomp); ImGui::SameLine();
-			ImGui::Text("Quality Factor:"); ImGui::SameLine();
-			ImGui::DragInt("##inputf", &quality, 1.f, 1, 100); ImGui::SameLine();
-			ImGui::Text("Block Size:"); ImGui::SameLine();
-			ImGui::DragInt("##inputb", &block_size, 2.f, 2, 256);
-			ImGui::AlignTextToFramePadding(); ImGui::Bullet();
-			ImGui::Checkbox("Show Compression Rate?", &jpeg->compression_rate); ImGui::SameLine();
-			ImGui::Text("Quality Start:"); ImGui::SameLine();
-			ImGui::DragInt("##inputc", &jpeg->quality_start, 1.f, 0, 100);
+			ImGui::Columns(2);
 
 			ImGui::AlignTextToFramePadding();
-			ImGui::Checkbox("Use QuadTree?", &quadtree); ImGui::SameLine();
-			ImGui::Text("Max Depth:"); ImGui::SameLine();
-			ImGui::DragInt("##inputd", &max_depth, 1.f, 1, max_depthmax); ImGui::SameLine();
-			ImGui::Text("Error Threshold:"); ImGui::SameLine();
-			ImGui::DragInt("##inpute", &threshold_error, 1.f, 0, threshold_errormax);
-			ImGui::AlignTextToFramePadding(); ImGui::Bullet();
-			ImGui::Text("Min Size:"); ImGui::SameLine();
-			ImGui::DragInt("##inputmins", &min_size, 2.f, 2, min_sizemax); ImGui::SameLine();
-			ImGui::Text("Max Size:"); ImGui::SameLine();
-			ImGui::DragInt("##inputmaxs", &max_size, 2.f, 4, max_sizemax); ImGui::SameLine();
-			ImGui::Checkbox("Draw Line?", &drawline); ImGui::SameLine();
-			ImGui::Checkbox("Power Of 2", &quadtreepo2);
+			ImGui::Checkbox("Use Jpeg?", &jpegcomp);
+			if (jpegcomp)
+			{
+				ImGui::Indent();
+				ImGui::Checkbox("Use Generated Quantization Table?", &qtablege);
+				ImGui::AlignTextToFramePadding(); ImGui::Bullet();
+				ImGui::Text("Quality Factor:"); ImGui::SameLine();
+				ImGui::DragInt("##inputf", &quality, 1.f, 1, 100);
+				ImGui::AlignTextToFramePadding(); ImGui::Bullet();
+				ImGui::Text("Block Size:"); ImGui::SameLine();
+				ImGui::DragInt("##inputb", &block_size, 2.f, 2, 256);
+				ImGui::Checkbox("Show Compression Rate?", &jpeg->compression_rate);
+				if (jpeg->compression_rate)
+				{
+					ImGui::Indent();
+					ImGui::Text("Quality Start:"); ImGui::SameLine();
+					ImGui::DragInt("##inputc", &jpeg->quality_start, 1.f, 0, 100);
+					ImGui::Unindent();
+				}
+				ImGui::Unindent();
+			}
+
+			ImGui::AlignTextToFramePadding();
+			ImGui::Checkbox("Use Zoom?", &usezoom);
+			if (usezoom)
+			{
+				ImGui::Indent();
+				ImGui::Text("Zoom:"); ImGui::SameLine();
+				ImGui::DragFloat("##inputz", &zoomv, 1.f, 1.f, zoomvmax, "%g");
+				ImGui::Text("Lupe Size:"); ImGui::SameLine();
+				ImGui::DragFloat("##inputl", &magnifiersize, 1.f, 10.f, magnifiersizemax, "%g");
+				ImGui::Unindent();
+			}
+
+			if (zoomv >= zoomvmax)
+			{
+				zoomvmax += 100.f;
+				zoomv -= 10.f;
+			}
+			if (magnifiersize >= magnifiersizemax)
+			{
+				magnifiersizemax += 1000.f;
+				magnifiersize -= 100.f;
+			}
+
+			ImGui::NextColumn();
+
+			ImGui::AlignTextToFramePadding();
+			ImGui::Checkbox("Use QuadTree?", &quadtree);
+			if (quadtree)
+			{
+				ImGui::Indent();
+				ImGui::Checkbox("Draw Line?", &drawline);
+				ImGui::Checkbox("Use Quad Size Power Of 2", &quadtreepo2);
+				ImGui::AlignTextToFramePadding(); ImGui::Bullet();
+				ImGui::Text("Max Depth:"); ImGui::SameLine();
+				ImGui::DragInt("##inputd", &max_depth, 1.f, 1, max_depthmax);
+				ImGui::AlignTextToFramePadding(); ImGui::Bullet();
+				ImGui::Text("Error Threshold:"); ImGui::SameLine();
+				ImGui::DragInt("##inpute", &threshold_error, 1.f, 0, threshold_errormax);
+				ImGui::AlignTextToFramePadding(); ImGui::Bullet();
+				ImGui::Text("Min Quad Size:"); ImGui::SameLine();
+				ImGui::DragInt("##inputmins", &min_size, 2.f, 2, min_sizemax);
+				ImGui::AlignTextToFramePadding(); ImGui::Bullet();
+				ImGui::Text("Max Quad Size:"); ImGui::SameLine();
+				ImGui::DragInt("##inputmaxs", &max_size, 2.f, 4, max_sizemax);
+				ImGui::Unindent();
+			}
 
 			if (max_depth >= max_depthmax)
 			{
@@ -318,31 +366,16 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 				max_size -= 10;
 			}
 
-			ImGui::AlignTextToFramePadding();
-			ImGui::Checkbox("##zoomcheck", &usezoom); ImGui::SameLine();
-			ImGui::Text("Zoom:"); ImGui::SameLine();
-			ImGui::DragFloat("##inputz", &zoomv, 1.f, 1.f, zoomvmax, "%g"); ImGui::SameLine();
-			ImGui::Text("Lupe size:"); ImGui::SameLine();
-			ImGui::DragFloat("##inputl", &magnifiersize, 1.f, 10.f, magnifiersizemax, "%g");
+			ImGui::Columns();
 
-			if (zoomv >= zoomvmax)
-			{
-				zoomvmax += 100.f;
-				zoomv -= 10.f;
-			}
-			if (magnifiersize >= magnifiersizemax)
-			{
-				magnifiersizemax += 1000.f;
-				magnifiersize -= 100.f;
-			}
+			ImGui::Separator();
 
-			ImGui::SameLine();
-			if (ImGui::Button("Compress"))
+			if (ImGui::Button("Compress", ImVec2(ImGui::GetContentRegionAvail().x, 0.f)))
 			{
 				if (quadtree && jpegcomp)
 				{
 					render_quadtree_jpeg(jpeg, max_depth, threshold_error,
-						min_size, max_size, drawline, quality);
+						min_size, max_size, drawline, quality, qtablege);
 				}
 				else 
 				{
@@ -350,7 +383,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 						render_quadtree(jpeg, max_depth, threshold_error,
 							min_size, max_size, drawline, quadtreepo2);
 					if (jpegcomp)
-						render_jpeg(jpeg, block_size, quality);
+						render_jpeg(jpeg, block_size, quality, qtablege);
 				}
 				image_to_opengl(jpeg, image_texturef, image_texturef_zoom);
 			}

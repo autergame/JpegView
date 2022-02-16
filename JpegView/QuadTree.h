@@ -222,7 +222,7 @@ void render_quadtree(JpegView* jpeg, int max_depth, int threshold_error,
 }
 
 void render_quadtree_jpeg(JpegView* jpeg, int max_depth, int threshold_error,
-	int min_size, int max_size, bool drawline, int quality)
+	int min_size, int max_size, bool drawline, int quality, bool qtablege)
 {
 	deletemod(&jpeg->final_image);
 
@@ -244,10 +244,8 @@ void render_quadtree_jpeg(JpegView* jpeg, int max_depth, int threshold_error,
 			mheight = quad->boxb;
 	}
 
-	while (mwidth % max_depth != 0)
-		mwidth++;
-	while (mheight % max_depth != 0)
-		mheight++;
+	mwidth = round_up_block_size(mwidth, max_size);
+	mheight = round_up_block_size(mheight, max_size);
 
 	uint8_t** YCbCr = image_to_matrix(jpeg->original_image, jpeg->width, jpeg->height, mwidth, mheight);
 
@@ -274,8 +272,9 @@ void render_quadtree_jpeg(JpegView* jpeg, int max_depth, int threshold_error,
 	float* DCTMatrix = new float[max_size * max_size]{};
 
 	uint8_t** result = new uint8_t*[3]{};
-	for (int i = 0; i < 3; i++)
-		result[i] = new uint8_t[mheight * mwidth]{};
+	result[0] = new uint8_t[mheight * mwidth]{};
+	result[1] = new uint8_t[mheight * mwidth]{};
+	result[2] = new uint8_t[mheight * mwidth]{};
 
 	jpeg_steps_struct* jss = new jpeg_steps_struct{};
 	jss->DCTMatrix = DCTMatrix;
@@ -301,10 +300,9 @@ void render_quadtree_jpeg(JpegView* jpeg, int max_depth, int threshold_error,
 		jss->start_x = quad->boxl;
 		jss->start_y = quad->boxt;
 
-		for (int j = 0; j < 3; j++)
-		{
-			JPEG_steps(jss, result[j], YCbCr[j]);
-		}
+		JPEG_steps(jss, result[0], YCbCr[0]);
+		JPEG_steps(jss, result[1], YCbCr[1]);
+		JPEG_steps(jss, result[2], YCbCr[2]);
 	}
 
 	jpeg->final_image = matrix_to_image(result, jpeg->width, jpeg->height, mwidth);

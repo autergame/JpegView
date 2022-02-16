@@ -331,20 +331,21 @@ uint8_t** Encode(uint8_t** YCbCr, float* qMatrix,
     jss->block = 2.f / (float)block_size;
 
     uint8_t** result = new uint8_t*[3]{};
-    for (int i = 0; i < 3; i++)
+    result[0] = new uint8_t[mheight * mwidth]{};
+    result[1] = new uint8_t[mheight * mwidth]{};
+    result[2] = new uint8_t[mheight * mwidth]{};
+
+    for (int byx = 0; byx < height_blocks * width_blocks; byx++)
     {
-        result[i] = new uint8_t[mheight * mwidth]{};
+        int bx = (byx % width_blocks) * block_size;
+        int by = (byx / width_blocks) * block_size;
 
-        for (int byx = 0; byx < height_blocks * width_blocks; byx++)
-        {
-            int bx = (byx % width_blocks) * block_size;
-            int by = (byx / width_blocks) * block_size;
+        jss->start_x = bx;
+        jss->start_y = by;
 
-            jss->start_x = bx;
-            jss->start_y = by;
-
-            JPEG_steps(jss, result[i], YCbCr[i]);
-        }
+        JPEG_steps(jss, result[0], YCbCr[0]);
+        JPEG_steps(jss, result[1], YCbCr[1]);
+        JPEG_steps(jss, result[2], YCbCr[2]);
     }
 
     deletemod(&jss);
@@ -357,38 +358,41 @@ uint8_t** Encode(uint8_t** YCbCr, float* qMatrix,
 uint8_t** image_to_matrix(uint8_t* original_image, int width, int height, int mwidth, int mheight)
 {
     uint8_t** result = new uint8_t*[3]{};
-    for (int i = 0; i < 3; i++) 
-    {
-        result[i] = new uint8_t[mheight * mwidth]{};
-        for (int y = 0; y < mheight; y++)
-        {
-            for (int x = width; x < mwidth; x++)
-            {
-                result[i][y * mwidth + x] = 0x80;
-            }
-        }
-        for (int y = height; y < mheight; y++)
-        {
-            for (int x = 0; x < mwidth; x++)
-            {
-                result[i][y * mwidth + x] = 0x80;
-            }
-        }
-    }
+    result[0] = new uint8_t[mheight * mwidth]{};
+    result[1] = new uint8_t[mheight * mwidth]{};
+    result[2] = new uint8_t[mheight * mwidth]{};
     for (int i = 0; i < height * width; i++)
     {
         int x = (i % width);
         int y = (i / width);
-        int index = i * 3;
+        int indexoriginal = i * 3;
         int indexresult = y * mwidth + x;
 
-        uint8_t r = original_image[index + 0];
-        uint8_t g = original_image[index + 1];
-        uint8_t b = original_image[index + 2];
+        uint8_t r = original_image[indexoriginal + 0];
+        uint8_t g = original_image[indexoriginal + 1];
+        uint8_t b = original_image[indexoriginal + 2];
 
         result[0][indexresult] = minmaxcolor((( 0.299f * r) + ( 0.587f * g) + ( 0.114f * b)));
         result[1][indexresult] = minmaxcolor(((-0.168f * r) + (-0.331f * g) + ( 0.500f * b)) + 128);
         result[2][indexresult] = minmaxcolor((( 0.500f * r) + (-0.418f * g) + (-0.081f * b)) + 128);
+    }
+    for (int y = 0; y < mheight; y++)
+    {
+        for (int x = width; x < mwidth; x++)
+        {
+            result[0][y * mwidth + x] = 0;
+            result[1][y * mwidth + x] = 0x80;
+            result[2][y * mwidth + x] = 0x80;
+        }
+    }
+    for (int y = height; y < mheight; y++)
+    {
+        for (int x = 0; x < mwidth; x++)
+        {
+            result[0][y * mwidth + x] = 0;
+            result[1][y * mwidth + x] = 0x80;
+            result[2][y * mwidth + x] = 0x80;
+        }
     }
     return result;
 }
@@ -400,21 +404,21 @@ uint8_t* matrix_to_image(uint8_t** YCbCr, int width, int height, int mwidth)
     {
         int x = (i % width);
         int y = (i / width);
-        int index = i * 3;
+        int indexoriginal = i * 3;
         int indexYCbCr = y * mwidth + x;
 
         uint8_t Y = YCbCr[0][indexYCbCr];
         int8_t Cb = YCbCr[1][indexYCbCr] - 128;
         int8_t Cr = YCbCr[2][indexYCbCr] - 128;
 
-        result[index + 0] = minmaxcolor(Y + ( 1.402f * Cr));
-        result[index + 1] = minmaxcolor(Y + (-0.344f * Cb) + (-0.714f * Cr));
-        result[index + 2] = minmaxcolor(Y + ( 1.772f * Cb));
+        result[indexoriginal + 0] = minmaxcolor(Y + ( 1.402f * Cr));
+        result[indexoriginal + 1] = minmaxcolor(Y + (-0.344f * Cb) + (-0.714f * Cr));
+        result[indexoriginal + 2] = minmaxcolor(Y + ( 1.772f * Cb));
     }
     return result;
 }
 
-void compress(JpegView* jpeg, float factor)
+void compress(JpegView* jpeg, float factor, bool qtablege)
 {
     deletemod(&jpeg->final_image);
 
@@ -443,44 +447,26 @@ void compress(JpegView* jpeg, float factor)
     deletemod(&YCbCrmodified);
 }
 
-void change_block(JpegView* jpeg, int block)
+int round_up_block_size(int x, int block_size)
 {
-    for (int i = 0; i < 3; i++)
-        deletemod(&jpeg->YCbCr[i]);
-    deletemod(&jpeg->YCbCr);
-
-    jpeg->block_size = block;
-
-    jpeg->mwidth = jpeg->width;
-    jpeg->mheight = jpeg->height;
-
-    while (jpeg->mwidth % jpeg->block_size != 0)
-        jpeg->mwidth++;
-    while (jpeg->mheight % jpeg->block_size != 0)
-        jpeg->mheight++;
-
-    jpeg->YCbCr = image_to_matrix(jpeg->original_image, jpeg->width, jpeg->height, jpeg->mwidth, jpeg->mheight);
+    x = (x + (block_size - 1));
+    return (x - (x % block_size));
 }
 
-JpegView* init_jpeg(uint8_t* original, int width, int height)
+JpegView* init_jpeg(uint8_t* original, int width, int height, int block_size)
 {
     JpegView* jpeg = new JpegView{};
     jpeg->width = width;
     jpeg->height = height;
-    jpeg->block_size = 8;
+    jpeg->block_size = block_size;
     jpeg->compression_rate = false;
     jpeg->quality_start = 0;
 
     jpeg->original_image = original;
     jpeg->final_image = nullptr;
 
-    jpeg->mwidth = width;
-    jpeg->mheight = height;
-
-    while (jpeg->mwidth % jpeg->block_size != 0)
-        jpeg->mwidth++;
-    while (jpeg->mheight % jpeg->block_size != 0)
-        jpeg->mheight++;
+    jpeg->mwidth = round_up_block_size(width, block_size);
+    jpeg->mheight = round_up_block_size(height, block_size);
 
     jpeg->YCbCr = image_to_matrix(jpeg->original_image, jpeg->width, jpeg->height, jpeg->mwidth, jpeg->mheight);
 
@@ -489,12 +475,23 @@ JpegView* init_jpeg(uint8_t* original, int width, int height)
     return jpeg;
 }
 
-void render_jpeg(JpegView* jpeg, int block, int quality)
+void render_jpeg(JpegView* jpeg, int block_size, int quality, bool qtablege)
 {
-    if (jpeg->block_size != block)
-        change_block(jpeg, block);
+    if (jpeg->block_size != block_size)
+    {
+        for (int i = 0; i < 3; i++)
+            deletemod(&jpeg->YCbCr[i]);
+        deletemod(&jpeg->YCbCr);
 
-    compress(jpeg, (float)quality);
+        jpeg->block_size = block_size;
+
+        jpeg->mwidth = round_up_block_size(jpeg->width, block_size);
+        jpeg->mheight = round_up_block_size(jpeg->height, block_size);
+
+        jpeg->YCbCr = image_to_matrix(jpeg->original_image, jpeg->width, jpeg->height, jpeg->mwidth, jpeg->mheight);
+    }
+
+    compress(jpeg, (float)quality, qtablege);
 }
 
 void image_to_opengl(JpegView* jpeg, GLuint image_texturef, GLuint image_texturef_zoom)
