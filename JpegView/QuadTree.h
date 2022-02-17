@@ -256,18 +256,23 @@ void render_quadtree_jpeg(JpegView* jpeg, int max_depth, int threshold_error,
 
 	float* alphaTable = generate_Alphatable(max_size);
 
-	float factor = (float)quality;
-	if (factor >= 50.f)
-		factor = 200.f - factor * 2.f;
-	else
-		factor = 5000.f / factor;
-
-	float* qMatrix;
-	if (jpeg->compression_rate)
-		qMatrix = generate_QMatrix_nofactor(max_size);
-	else 
-		qMatrix = generate_QMatrix(max_size, factor);
-	float Q_control = 100.f - jpeg->quality_start;
+	float* qMatrix_luma, *qMatrix_chroma;
+	if (!jpeg->compression_rate)
+	{
+		float factor = (float)quality;
+		if (factor >= 50.f && factor <= 99.f)
+			factor = 200.f - factor * 2.f;
+		else if (factor < 50.f)
+			factor = 5000.f / factor;
+		else if (factor == 100.f)
+			factor = 1.f;
+		qMatrix_luma = generate_QMatrix(qMatrix_luma_const, max_size, factor, qtablege);
+		qMatrix_chroma = generate_QMatrix(qMatrix_chroma_const, max_size, factor, qtablege);
+	}
+	else {
+		qMatrix_luma = generate_QMatrix_nofactor(qMatrix_luma_const, max_size, qtablege);
+		qMatrix_chroma = generate_QMatrix_nofactor(qMatrix_chroma_const, max_size, qtablege);
+	}
 
 	float* DCTMatrix = new float[max_size * max_size]{};
 
@@ -279,12 +284,11 @@ void render_quadtree_jpeg(JpegView* jpeg, int max_depth, int threshold_error,
 	jpeg_steps_struct* jss = new jpeg_steps_struct{};
 	jss->DCTMatrix = DCTMatrix;
 	jss->alphaTable = alphaTable;
-	jss->qMatrix = qMatrix;
 	jss->dctalpha_size = max_size;
 	jss->mwidth = mwidth;
 	jss->compression_rate = jpeg->compression_rate;
 	jss->quality_start = jpeg->quality_start;
-	jss->Q_control = Q_control;
+	jss->Q_control = 100.f - jpeg->quality_start;
 
 	for (size_t i = 0; i < list.size(); i++)
 	{
@@ -300,9 +304,9 @@ void render_quadtree_jpeg(JpegView* jpeg, int max_depth, int threshold_error,
 		jss->start_x = quad->boxl;
 		jss->start_y = quad->boxt;
 
-		JPEG_steps(jss, result[0], YCbCr[0]);
-		JPEG_steps(jss, result[1], YCbCr[1]);
-		JPEG_steps(jss, result[2], YCbCr[2]);
+		JPEG_steps(jss, result[0], YCbCr[0], qMatrix_luma);
+		JPEG_steps(jss, result[1], YCbCr[1], qMatrix_chroma);
+		JPEG_steps(jss, result[2], YCbCr[2], qMatrix_chroma);
 	}
 
 	jpeg->final_image = matrix_to_image(result, jpeg->width, jpeg->height, mwidth);
@@ -321,7 +325,8 @@ void render_quadtree_jpeg(JpegView* jpeg, int max_depth, int threshold_error,
 	clean_node(&root);
 
 	deletemod(&jss);
-	deletemod(&qMatrix);
+	deletemod(&qMatrix_luma);
+	deletemod(&qMatrix_chroma);
 	deletemod(&DCTMatrix);
 	deletemod(&alphaTable);
 

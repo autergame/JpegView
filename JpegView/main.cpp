@@ -273,6 +273,8 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 				}
 			}
 
+			ImGui::Separator();
+
 			ImGui::Columns(2);
 
 			ImGui::AlignTextToFramePadding();
@@ -280,13 +282,13 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 			if (jpegcomp)
 			{
 				ImGui::Indent();
-				ImGui::Checkbox("Use Generated Quantization Table?", &qtablege);
 				ImGui::AlignTextToFramePadding(); ImGui::Bullet();
 				ImGui::Text("Quality Factor:"); ImGui::SameLine();
 				ImGui::DragInt("##inputf", &quality, 1.f, 1, 100);
 				ImGui::AlignTextToFramePadding(); ImGui::Bullet();
 				ImGui::Text("Block Size:"); ImGui::SameLine();
 				ImGui::DragInt("##inputb", &block_size, 2.f, 2, 256);
+				ImGui::Checkbox("Use Generated Quantization Table?", &qtablege);
 				ImGui::Checkbox("Show Compression Rate?", &jpeg->compression_rate);
 				if (jpeg->compression_rate)
 				{
@@ -328,8 +330,6 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 			if (quadtree)
 			{
 				ImGui::Indent();
-				ImGui::Checkbox("Draw Line?", &drawline);
-				ImGui::Checkbox("Use Quad Size Power Of 2", &quadtreepo2);
 				ImGui::AlignTextToFramePadding(); ImGui::Bullet();
 				ImGui::Text("Max Depth:"); ImGui::SameLine();
 				ImGui::DragInt("##inputd", &max_depth, 1.f, 1, max_depthmax);
@@ -341,7 +341,9 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 				ImGui::DragInt("##inputmins", &min_size, 2.f, 2, min_sizemax);
 				ImGui::AlignTextToFramePadding(); ImGui::Bullet();
 				ImGui::Text("Max Quad Size:"); ImGui::SameLine();
-				ImGui::DragInt("##inputmaxs", &max_size, 2.f, 4, max_sizemax);
+				ImGui::DragInt("##inputmaxs", &max_size, 2.f, 4, max_sizemax);			
+				ImGui::Checkbox("Use Quad Size Power Of 2", &quadtreepo2);
+				ImGui::Checkbox("Draw Quadrant Line?", &drawline);
 				ImGui::Unindent();
 			}
 

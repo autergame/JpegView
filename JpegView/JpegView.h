@@ -152,27 +152,106 @@ GLuint create_image(uint8_t* image, int width, int height, bool linear)
     return image_texture;
 }
 
-float* generate_QMatrix_nofactor(int block_size)
+const float qMatrix_luma_const[64] = {
+    16.f, 11.f, 10.f, 16.f,  24.f,  40.f,  51.f,  61.f,
+    12.f, 12.f, 14.f, 19.f,  26.f,  58.f,  60.f,  55.f,
+    14.f, 13.f, 16.f, 24.f,  40.f,  57.f,  69.f,  56.f,
+    14.f, 17.f, 22.f, 29.f,  51.f,  87.f,  80.f,  62.f,
+    18.f, 22.f, 37.f, 56.f,  68.f, 109.f, 103.f,  77.f,
+    24.f, 35.f, 55.f, 64.f,  81.f, 104.f, 113.f,  92.f,
+    49.f, 64.f, 78.f, 87.f, 103.f, 121.f, 120.f, 101.f,
+    72.f, 92.f, 95.f, 98.f, 112.f, 100.f, 103.f,  99.f
+};
+const float qMatrix_chroma_const[64] = {
+    17.f, 18.f, 24.f, 47.f, 99.f, 99.f, 99.f, 99.f,
+    18.f, 21.f, 26.f, 66.f, 99.f, 99.f, 99.f, 99.f,
+    24.f, 26.f, 56.f, 99.f, 99.f, 99.f, 99.f, 99.f,
+    47.f, 66.f, 99.f, 99.f, 99.f, 99.f, 99.f, 99.f,
+    99.f, 99.f, 99.f, 99.f, 99.f, 99.f, 99.f, 99.f,
+    99.f, 99.f, 99.f, 99.f, 99.f, 99.f, 99.f, 99.f,
+    99.f, 99.f, 99.f, 99.f, 99.f, 99.f, 99.f, 99.f,
+    99.f, 99.f, 99.f, 99.f, 99.f, 99.f, 99.f, 99.f
+};
+
+float* generate_QMatrix_nofactor(const float* qMatrix_base, int block_size, bool qtablege)
 {
     float* qMatrix = new float[block_size * block_size]{};
-    for (int y = 0; y < block_size; y++)
+    if (qtablege == true)
     {
-        for (int x = 0; x < block_size; x++)
+        for (int y = 0; y < block_size; y++)
         {
-            qMatrix[y * block_size + x] = 1.f + x + y;
+            for (int x = 0; x < block_size; x++)
+            {
+                qMatrix[y * block_size + x] = 1.f + x + y;
+            }
+        }
+        return qMatrix;
+    }
+    int const_block_size = block_size < 8 ? block_size : 8;
+    for (int y = 0; y < const_block_size; y++)
+    {
+        for (int x = 0; x < const_block_size; x++)
+        {
+            qMatrix[y * block_size + x] = qMatrix_base[y * 8 + x];
+        }
+    }
+    if (block_size > 8)
+    {
+        for (int y = 0; y < block_size; y++)
+        {
+            for (int x = 8; x < block_size; x++)
+            {
+                qMatrix[y * block_size + x] = 1.f + x + y;
+            }
+        }
+        for (int y = 8; y < block_size; y++)
+        {
+            for (int x = 0; x < block_size; x++)
+            {
+                qMatrix[y * block_size + x] = 1.f + x + y;
+            }
         }
     }
     return qMatrix;
 }
 
-float* generate_QMatrix(int block_size, float factor)
+float* generate_QMatrix(const float* qMatrix_base, int block_size, float factor, bool qtablege)
 {
     float* qMatrix = new float[block_size * block_size]{};
-    for (int y = 0; y < block_size; y++)
+    if (qtablege == true)
     {
-        for (int x = 0; x < block_size; x++)
+        for (int y = 0; y < block_size; y++)
         {
-            qMatrix[y * block_size + x] = 1.f + (1.f + x + y) * factor;
+            for (int x = 0; x < block_size; x++)
+            {
+                qMatrix[y * block_size + x] = 1.f + (1.f + x + y) * factor;
+            }
+        }
+        return qMatrix;
+    }
+    int const_block_size = block_size < 8 ? block_size : 8;
+    for (int y = 0; y < const_block_size; y++)
+    {
+        for (int x = 0; x < const_block_size; x++)
+        {
+            qMatrix[y * block_size + x] = qMatrix_base[y * 8 + x];
+        }
+    }
+    if (block_size > 8)
+    {
+        for (int y = 0; y < block_size; y++)
+        {
+            for (int x = 8; x < block_size; x++)
+            {
+                qMatrix[y * block_size + x] = 1.f + (1.f + x + y) * factor;
+            }
+        }
+        for (int y = 8; y < block_size; y++)
+        {
+            for (int x = 0; x < block_size; x++)
+            {
+                qMatrix[y * block_size + x] = 1.f + (1.f + x + y) * factor;
+            }
         }
     }
     return qMatrix;
@@ -210,7 +289,6 @@ struct jpeg_steps_struct
     float* DCTMatrix;
     float* DCTTable;
     float* alphaTable;
-    float* qMatrix;
     int block_size;
     int dctalpha_size;
     int mwidth;
@@ -247,7 +325,7 @@ void DCT_function(jpeg_steps_struct* jss, uint8_t* YCbCr)
     }
 }
 
-void Quantize_function(jpeg_steps_struct* jss)
+void Quantize_function(jpeg_steps_struct* jss, float* qMatrix)
 {
     for (int k = 0; k < jss->block_size * jss->block_size; k++)
     {
@@ -259,15 +337,17 @@ void Quantize_function(jpeg_steps_struct* jss)
         if (jss->compression_rate)
         {
             float factor = jss->quality_start + ((float)(jss->start_x + x) / (float)jss->mwidth) * jss->Q_control;
-            if (factor >= 50.f)
+            if (factor >= 50.f && factor <= 99.f)
                 factor = 200.f - factor * 2.f;
-            else
+            else if (factor < 50.f)
                 factor = 5000.f / factor;
+            else if (factor == 100.f)
+                factor = 1.f;
 
-            qMatrix_value = minmaxq(1.f + jss->qMatrix[index] * factor);
+            qMatrix_value = minmaxq(1.f + qMatrix[index] * factor);
         }
         else {
-            qMatrix_value = minmaxq(jss->qMatrix[index]);
+            qMatrix_value = minmaxq(qMatrix[index]);
         }
 
         jss->DCTMatrix[index] = roundf(jss->DCTMatrix[index] / qMatrix_value) * qMatrix_value;
@@ -299,15 +379,15 @@ void inverse_DCT_function(jpeg_steps_struct* jss, uint8_t* result)
     }
 }
 
-void JPEG_steps(jpeg_steps_struct* jss, uint8_t* result, uint8_t* YCbCr)
+void JPEG_steps(jpeg_steps_struct* jss, uint8_t* result, uint8_t* YCbCr, float* qMatrix)
 {
     DCT_function(jss, YCbCr);
-    Quantize_function(jss);
+    Quantize_function(jss, qMatrix);
     inverse_DCT_function(jss, result);
 }
 
-uint8_t** Encode(uint8_t** YCbCr, float* qMatrix,
-    int block_size, int mwidth, int mheight, bool compression_rate, int quality_start, float Q_control)
+uint8_t** Encode(uint8_t** YCbCr, float* qMatrix_luma, float* qMatrix_chroma,
+    int block_size, int mwidth, int mheight, bool compression_rate, int quality_start)
 {
     float block = 2.f / (float)block_size;
     int width_blocks = mwidth / block_size;
@@ -321,12 +401,11 @@ uint8_t** Encode(uint8_t** YCbCr, float* qMatrix,
     jss->DCTMatrix = DCTMatrix;
     jss->DCTTable = DCTTable;
     jss->alphaTable = alphaTable;
-    jss->qMatrix = qMatrix;
     jss->dctalpha_size = block_size;
     jss->mwidth = mwidth;
     jss->compression_rate = compression_rate;
     jss->quality_start = quality_start;
-    jss->Q_control = Q_control;
+    jss->Q_control = 100.f - quality_start;
     jss->block_size = block_size;
     jss->block = 2.f / (float)block_size;
 
@@ -343,9 +422,9 @@ uint8_t** Encode(uint8_t** YCbCr, float* qMatrix,
         jss->start_x = bx;
         jss->start_y = by;
 
-        JPEG_steps(jss, result[0], YCbCr[0]);
-        JPEG_steps(jss, result[1], YCbCr[1]);
-        JPEG_steps(jss, result[2], YCbCr[2]);
+        JPEG_steps(jss, result[0], YCbCr[0], qMatrix_luma);
+        JPEG_steps(jss, result[1], YCbCr[1], qMatrix_chroma);
+        JPEG_steps(jss, result[2], YCbCr[2], qMatrix_chroma);
     }
 
     deletemod(&jss);
@@ -422,26 +501,30 @@ void compress(JpegView* jpeg, float factor, bool qtablege)
 {
     deletemod(&jpeg->final_image);
 
-    float* qMatrix, Q_control = 0.f;
+    float* qMatrix_luma, *qMatrix_chroma;
     if (!jpeg->compression_rate)
     {
-        if (factor >= 50.f)
+        if (factor >= 50.f && factor <= 99.f)
             factor = 200.f - factor * 2.f;
-        else
+        else if (factor < 50.f)
             factor = 5000.f / factor;
-        qMatrix = generate_QMatrix(jpeg->block_size, factor);
+        else if (factor == 100.f)
+            factor = 1.f;
+        qMatrix_luma = generate_QMatrix(qMatrix_luma_const, jpeg->block_size, factor, qtablege);
+        qMatrix_chroma = generate_QMatrix(qMatrix_chroma_const, jpeg->block_size, factor, qtablege);
     }
     else {
-        Q_control = 100.f - jpeg->quality_start;
-        qMatrix = generate_QMatrix_nofactor(jpeg->block_size);
+        qMatrix_luma = generate_QMatrix_nofactor(qMatrix_luma_const, jpeg->block_size, qtablege);
+        qMatrix_chroma = generate_QMatrix_nofactor(qMatrix_chroma_const, jpeg->block_size, qtablege);
     }
 
-    uint8_t** YCbCrmodified = Encode(jpeg->YCbCr, qMatrix,
-        jpeg->block_size, jpeg->mwidth, jpeg->mheight, jpeg->compression_rate, jpeg->quality_start, Q_control);
+    uint8_t** YCbCrmodified = Encode(jpeg->YCbCr, qMatrix_luma, qMatrix_chroma,
+        jpeg->block_size, jpeg->mwidth, jpeg->mheight, jpeg->compression_rate, jpeg->quality_start);
     
     jpeg->final_image = matrix_to_image(YCbCrmodified, jpeg->width, jpeg->height, jpeg->mwidth);
 
-    deletemod(&qMatrix);
+    deletemod(&qMatrix_luma);
+    deletemod(&qMatrix_chroma);
     for (int i = 0; i < 3; i++)
         deletemod(&YCbCrmodified[i]);
     deletemod(&YCbCrmodified);
