@@ -58,15 +58,6 @@ uint8_t minmaxcolor(float color)
     return (uint8_t)color;
 }
 
-float minmaxq(float color)
-{
-    if (color > 255.f)
-        return 255.f;
-    else if (color <= 0.f)
-        return 1.f;
-    return color;
-}
-
 struct JpegView
 {
     int width, height;
@@ -302,80 +293,82 @@ struct jpeg_steps_struct
 
 void DCT_function(jpeg_steps_struct* jss, uint8_t* YCbCr)
 {
-    for (int k = 0; k < jss->block_size * jss->block_size; k++)
+    for (int v = 0; v < jss->block_size; v++)
     {
-        int u = (k % jss->block_size);
-        int v = (k / jss->block_size);
-
-        float sum = 0.0f;
-        for (int l = 0; l < jss->block_size * jss->block_size; l++)
+        for (int u = 0; u < jss->block_size; u++)
         {
-            int x = (l % jss->block_size);
-            int y = (l / jss->block_size);
-            int index = (jss->start_y + y) * jss->mwidth + (jss->start_x + x);
+            float sum = 0.0f;
+            for (int y = 0; y < jss->block_size; y++)
+            {
+                for (int x = 0; x < jss->block_size; x++)
+                {
+                    int index = (jss->start_y + y) * jss->mwidth + (jss->start_x + x);
 
-            float xu = jss->DCTTable[x * jss->block_size + u];
-            float yv = jss->DCTTable[y * jss->block_size + v];
+                    float xu = jss->DCTTable[x * jss->block_size + u];
+                    float yv = jss->DCTTable[y * jss->block_size + v];
 
-            sum += (YCbCr[index] - 128.f) * xu * yv;
+                    sum += (YCbCr[index] - 128.f) * xu * yv;
+                }
+            }
+
+            int index = v * jss->dctalpha_size + u;
+            jss->DCTMatrix[index] = jss->alphaTable[index] * sum * jss->block;
         }
-
-        int index = v * jss->dctalpha_size + u;
-        jss->DCTMatrix[index] = jss->alphaTable[index] * sum * jss->block;
     }
 }
 
 void Quantize_function(jpeg_steps_struct* jss, float* qMatrix)
 {
-    for (int k = 0; k < jss->block_size * jss->block_size; k++)
+    for (int y = 0; y < jss->block_size; y++)
     {
-        int x = (k % jss->block_size);
-        int y = (k / jss->block_size);
-        int index = y * jss->dctalpha_size + x;
-
-        float qMatrix_value = 0;
-        if (jss->compression_rate)
+        for (int x = 0; x < jss->block_size; x++)
         {
-            float factor = jss->quality_start + ((float)(jss->start_x + x) / (float)jss->mwidth) * jss->Q_control;
-            if (factor >= 50.f && factor <= 99.f)
-                factor = 200.f - factor * 2.f;
-            else if (factor < 50.f)
-                factor = 5000.f / factor;
-            else if (factor == 100.f)
-                factor = 1.f;
+            int index = y * jss->dctalpha_size + x;
 
-            qMatrix_value = minmaxq(1.f + qMatrix[index] * factor);
-        }
-        else {
-            qMatrix_value = minmaxq(qMatrix[index]);
-        }
+            float qMatrix_value = 0;
+            if (jss->compression_rate)
+            {
+                float factor = jss->quality_start + ((float)(jss->start_x + x) / (float)jss->mwidth) * jss->Q_control;
+                if (factor >= 50.f && factor <= 99.f)
+                    factor = 200.f - factor * 2.f;
+                else if (factor < 50.f)
+                    factor = 5000.f / factor;
+                else if (factor > 99.f)
+                    factor = 1.f;
 
-        jss->DCTMatrix[index] = roundf(jss->DCTMatrix[index] / qMatrix_value) * qMatrix_value;
+                qMatrix_value = 1.f + qMatrix[index] * factor;
+            }
+            else {
+                qMatrix_value = qMatrix[index];
+            }
+
+            jss->DCTMatrix[index] = roundf(jss->DCTMatrix[index] / qMatrix_value) * qMatrix_value;
+        }
     }
 }
 
 void inverse_DCT_function(jpeg_steps_struct* jss, uint8_t* result)
 {
-    for (int k = 0; k < jss->block_size * jss->block_size; k++)
+    for (int y = 0; y < jss->block_size; y++)
     {
-        int x = (k % jss->block_size);
-        int y = (k / jss->block_size);
-
-        float sum = 0.f;
-        for (int l = 0; l < jss->block_size * jss->block_size; l++)
+        for (int x = 0; x < jss->block_size; x++)
         {
-            int u = (l % jss->block_size);
-            int v = (l / jss->block_size);
+            float sum = 0.f;
+            for (int v = 0; v < jss->block_size; v++)
+            {
+                for (int u = 0; u < jss->block_size; u++)
+                {
+                    float xu = jss->DCTTable[x * jss->block_size + u];
+                    float yv = jss->DCTTable[y * jss->block_size + v];
 
-            float xu = jss->DCTTable[x * jss->block_size + u];
-            float yv = jss->DCTTable[y * jss->block_size + v];
+                    int index = v * jss->dctalpha_size + u;
+                    sum += jss->alphaTable[index] * jss->DCTMatrix[index] * xu * yv;
+                }
+            }
 
-            int index = v * jss->dctalpha_size + u;
-            sum += jss->alphaTable[index] * jss->DCTMatrix[index] * xu * yv;
+            int index = (jss->start_y + y) * jss->mwidth + (jss->start_x + x);
+            result[index] = minmaxcolor((sum * jss->block) + 128.f);
         }
-
-        int index = (jss->start_y + y) * jss->mwidth + (jss->start_x + x);
-        result[index] = minmaxcolor((sum * jss->block) + 128.f);
     }
 }
 
@@ -390,8 +383,6 @@ uint8_t** Encode(uint8_t** YCbCr, float* qMatrix_luma, float* qMatrix_chroma,
     int block_size, int mwidth, int mheight, bool compression_rate, int quality_start)
 {
     float block = 2.f / (float)block_size;
-    int width_blocks = mwidth / block_size;
-    int height_blocks = mheight / block_size;
 
     float* DCTMatrix = new float[block_size * block_size]{};
     float* DCTTable = generate_DCTtable(block_size);
@@ -414,17 +405,17 @@ uint8_t** Encode(uint8_t** YCbCr, float* qMatrix_luma, float* qMatrix_chroma,
     result[1] = new uint8_t[mheight * mwidth]{};
     result[2] = new uint8_t[mheight * mwidth]{};
 
-    for (int byx = 0; byx < height_blocks * width_blocks; byx++)
+    for (int by = 0; by < mheight; by += block_size)
     {
-        int bx = (byx % width_blocks) * block_size;
-        int by = (byx / width_blocks) * block_size;
+        for (int bx = 0; bx < mwidth; bx += block_size)
+        {
+            jss->start_x = bx;
+            jss->start_y = by;
 
-        jss->start_x = bx;
-        jss->start_y = by;
-
-        JPEG_steps(jss, result[0], YCbCr[0], qMatrix_luma);
-        JPEG_steps(jss, result[1], YCbCr[1], qMatrix_chroma);
-        JPEG_steps(jss, result[2], YCbCr[2], qMatrix_chroma);
+            JPEG_steps(jss, result[0], YCbCr[0], qMatrix_luma);
+            JPEG_steps(jss, result[1], YCbCr[1], qMatrix_chroma);
+            JPEG_steps(jss, result[2], YCbCr[2], qMatrix_chroma);
+        }
     }
 
     deletemod(&jss);
@@ -440,37 +431,40 @@ uint8_t** image_to_matrix(uint8_t* original_image, int width, int height, int mw
     result[0] = new uint8_t[mheight * mwidth]{};
     result[1] = new uint8_t[mheight * mwidth]{};
     result[2] = new uint8_t[mheight * mwidth]{};
-    for (int i = 0; i < height * width; i++)
+    for (int y = 0; y < height; y++)
     {
-        int x = (i % width);
-        int y = (i / width);
-        int indexoriginal = i * 3;
-        int indexresult = y * mwidth + x;
+        for (int x = 0; x < width; x++)
+        {
+            int indexresult = y * mwidth + x;
+            int indexoriginal = (y * width + x) * 3;
 
-        uint8_t r = original_image[indexoriginal + 0];
-        uint8_t g = original_image[indexoriginal + 1];
-        uint8_t b = original_image[indexoriginal + 2];
+            uint8_t r = original_image[indexoriginal + 0];
+            uint8_t g = original_image[indexoriginal + 1];
+            uint8_t b = original_image[indexoriginal + 2];
 
-        result[0][indexresult] = minmaxcolor((( 0.299f * r) + ( 0.587f * g) + ( 0.114f * b)));
-        result[1][indexresult] = minmaxcolor(((-0.168f * r) + (-0.331f * g) + ( 0.500f * b)) + 128);
-        result[2][indexresult] = minmaxcolor((( 0.500f * r) + (-0.418f * g) + (-0.081f * b)) + 128);
+            result[0][indexresult] = minmaxcolor((( 0.299f * r) + ( 0.587f * g) + ( 0.114f * b)));
+            result[1][indexresult] = minmaxcolor(((-0.168f * r) + (-0.331f * g) + ( 0.500f * b)) + 128);
+            result[2][indexresult] = minmaxcolor((( 0.500f * r) + (-0.418f * g) + (-0.081f * b)) + 128);
+        }
     }
     for (int y = 0; y < mheight; y++)
     {
         for (int x = width; x < mwidth; x++)
         {
-            result[0][y * mwidth + x] = 0;
-            result[1][y * mwidth + x] = 0x80;
-            result[2][y * mwidth + x] = 0x80;
+            int indexresult = y * mwidth + x;
+            result[0][indexresult] = 0x80;
+            result[1][indexresult] = 0x80;
+            result[2][indexresult] = 0x80;
         }
     }
     for (int y = height; y < mheight; y++)
     {
         for (int x = 0; x < mwidth; x++)
         {
-            result[0][y * mwidth + x] = 0;
-            result[1][y * mwidth + x] = 0x80;
-            result[2][y * mwidth + x] = 0x80;
+            int indexresult = y * mwidth + x;
+            result[0][indexresult] = 0x80;
+            result[1][indexresult] = 0x80;
+            result[2][indexresult] = 0x80;
         }
     }
     return result;
@@ -479,20 +473,21 @@ uint8_t** image_to_matrix(uint8_t* original_image, int width, int height, int mw
 uint8_t* matrix_to_image(uint8_t** YCbCr, int width, int height, int mwidth)
 {
     uint8_t* result = new uint8_t[height * width * 3]{};
-    for (int i = 0; i < height * width; i++)
+    for (int y = 0; y < height; y++)
     {
-        int x = (i % width);
-        int y = (i / width);
-        int indexoriginal = i * 3;
-        int indexYCbCr = y * mwidth + x;
+        for (int x = 0; x < width; x++)
+        {
+            int indexYCbCr = y * mwidth + x;
+            int indexresult = (y * width + x) * 3;
 
-        uint8_t Y = YCbCr[0][indexYCbCr];
-        int8_t Cb = YCbCr[1][indexYCbCr] - 128;
-        int8_t Cr = YCbCr[2][indexYCbCr] - 128;
+            uint8_t Y = YCbCr[0][indexYCbCr];
+            int8_t Cb = YCbCr[1][indexYCbCr] - 128;
+            int8_t Cr = YCbCr[2][indexYCbCr] - 128;
 
-        result[indexoriginal + 0] = minmaxcolor(Y + ( 1.402f * Cr));
-        result[indexoriginal + 1] = minmaxcolor(Y + (-0.344f * Cb) + (-0.714f * Cr));
-        result[indexoriginal + 2] = minmaxcolor(Y + ( 1.772f * Cb));
+            result[indexresult + 0] = minmaxcolor(Y + (1.402f * Cr));
+            result[indexresult + 1] = minmaxcolor(Y + (-0.344f * Cb) + (-0.714f * Cr));
+            result[indexresult + 2] = minmaxcolor(Y + (1.772f * Cb));
+        }
     }
     return result;
 }
@@ -543,7 +538,7 @@ JpegView* init_jpeg(uint8_t* original, int width, int height, int block_size)
     jpeg->height = height;
     jpeg->block_size = block_size;
     jpeg->compression_rate = false;
-    jpeg->quality_start = 0;
+    jpeg->quality_start = 1;
 
     jpeg->original_image = original;
     jpeg->final_image = nullptr;

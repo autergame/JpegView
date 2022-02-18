@@ -294,7 +294,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 				{
 					ImGui::Indent();
 					ImGui::Text("Quality Start:"); ImGui::SameLine();
-					ImGui::DragInt("##inputc", &jpeg->quality_start, 1.f, 0, 100);
+					ImGui::DragInt("##inputc", &jpeg->quality_start, 1.f, 1, 100);
 					ImGui::Unindent();
 				}
 				ImGui::Unindent();
