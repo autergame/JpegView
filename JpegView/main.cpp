@@ -94,10 +94,16 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 	ImVec2 uv_min = ImVec2(0.f, 0.f);
 	ImVec2 uv_max = ImVec2(1.f, 1.f);
 
-	int quality = 90, block_size = 8;
-	int max_depth = 50, threshold_error = 5, min_size = 8, max_size = 32;
+	int quality = 90, block_size = 8, subsampling_index = 0;
+	const char* subsampling_items[] = { 
+		"4:4:4", "4:4:0", "4:2:2", "4:2:0", "4:1:1"
+	};
 
-	int max_depthmax = 100, threshold_errormax = 100, min_sizemax = 128, max_sizemax = 256;
+	int max_depth = 50, threshold_error = 5;
+	int min_size = 8, max_size = 32;
+
+	int max_depthmax = 100, threshold_errormax = 100;
+	int min_sizemax = 128, max_sizemax = 256;
 
 	JpegView* jpeg = nullptr;
 	int swidth, sheight, schannels;
@@ -277,6 +283,8 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 
 			ImGui::Columns(2);
 
+			float firstcolumn = ImGui::GetColumnWidth(0) * 0.90f;
+
 			ImGui::AlignTextToFramePadding();
 			ImGui::Checkbox("Use Jpeg?", &jpegcomp);
 			if (jpegcomp)
@@ -284,16 +292,23 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 				ImGui::Indent();
 				ImGui::AlignTextToFramePadding(); ImGui::Bullet();
 				ImGui::Text("Quality Factor:"); ImGui::SameLine();
+				ImGui::SetNextItemWidth(firstcolumn - GImGui->CurrentWindow->DC.CursorPos.x);
 				ImGui::DragInt("##inputf", &quality, 1.f, 1, 100);
 				ImGui::AlignTextToFramePadding(); ImGui::Bullet();
 				ImGui::Text("Block Size:"); ImGui::SameLine();
+				ImGui::SetNextItemWidth(firstcolumn - GImGui->CurrentWindow->DC.CursorPos.x);
 				ImGui::DragInt("##inputb", &block_size, 2.f, 2, 256);
+				ImGui::Text("Chroma Subsampling:"); ImGui::SameLine();
+				ImGui::SetNextItemWidth(firstcolumn - GImGui->CurrentWindow->DC.CursorPos.x);
+				ImGui::Combo("##list", &subsampling_index, subsampling_items, IM_ARRAYSIZE(subsampling_items));
 				ImGui::Checkbox("Use Generated Quantization Table?", &qtablege);
 				ImGui::Checkbox("Show Compression Rate?", &jpeg->compression_rate);
 				if (jpeg->compression_rate)
 				{
 					ImGui::Indent();
+					ImGui::AlignTextToFramePadding(); ImGui::Bullet();
 					ImGui::Text("Quality Start:"); ImGui::SameLine();
+					ImGui::SetNextItemWidth(firstcolumn - GImGui->CurrentWindow->DC.CursorPos.x);
 					ImGui::DragInt("##inputc", &jpeg->quality_start, 1.f, 1, 100);
 					ImGui::Unindent();
 				}
@@ -305,9 +320,13 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 			if (usezoom)
 			{
 				ImGui::Indent();
+				ImGui::AlignTextToFramePadding(); ImGui::Bullet();
 				ImGui::Text("Zoom:"); ImGui::SameLine();
+				ImGui::SetNextItemWidth(firstcolumn - GImGui->CurrentWindow->DC.CursorPos.x);
 				ImGui::DragFloat("##inputz", &zoomv, 1.f, 1.f, zoomvmax, "%g");
+				ImGui::AlignTextToFramePadding(); ImGui::Bullet();
 				ImGui::Text("Lupe Size:"); ImGui::SameLine();
+				ImGui::SetNextItemWidth(firstcolumn - GImGui->CurrentWindow->DC.CursorPos.x);
 				ImGui::DragFloat("##inputl", &magnifiersize, 1.f, 10.f, magnifiersizemax, "%g");
 				ImGui::Unindent();
 			}
@@ -330,17 +349,22 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 			if (quadtree)
 			{
 				ImGui::Indent();
+				float secondcolumn = ImGui::GetColumnWidth(0) + (ImGui::GetColumnWidth(1) * 0.90f);
 				ImGui::AlignTextToFramePadding(); ImGui::Bullet();
 				ImGui::Text("Max Depth:"); ImGui::SameLine();
+				ImGui::SetNextItemWidth(secondcolumn - GImGui->CurrentWindow->DC.CursorPos.x);
 				ImGui::DragInt("##inputd", &max_depth, 1.f, 1, max_depthmax);
 				ImGui::AlignTextToFramePadding(); ImGui::Bullet();
 				ImGui::Text("Error Threshold:"); ImGui::SameLine();
+				ImGui::SetNextItemWidth(secondcolumn - GImGui->CurrentWindow->DC.CursorPos.x);
 				ImGui::DragInt("##inpute", &threshold_error, 1.f, 0, threshold_errormax);
 				ImGui::AlignTextToFramePadding(); ImGui::Bullet();
 				ImGui::Text("Min Quad Size:"); ImGui::SameLine();
+				ImGui::SetNextItemWidth(secondcolumn - GImGui->CurrentWindow->DC.CursorPos.x);
 				ImGui::DragInt("##inputmins", &min_size, 2.f, 2, min_sizemax);
 				ImGui::AlignTextToFramePadding(); ImGui::Bullet();
 				ImGui::Text("Max Quad Size:"); ImGui::SameLine();
+				ImGui::SetNextItemWidth(secondcolumn - GImGui->CurrentWindow->DC.CursorPos.x);
 				ImGui::DragInt("##inputmaxs", &max_size, 2.f, 4, max_sizemax);			
 				ImGui::Checkbox("Use Quad Size Power Of 2", &quadtreepo2);
 				ImGui::Checkbox("Draw Quadrant Line?", &drawline);
@@ -377,7 +401,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 				if (quadtree && jpegcomp)
 				{
 					render_quadtree_jpeg(jpeg, max_depth, threshold_error,
-						min_size, max_size, drawline, quality, qtablege);
+						min_size, max_size, drawline, quality, qtablege, subsampling_index);
 				}
 				else 
 				{
@@ -385,7 +409,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 						render_quadtree(jpeg, max_depth, threshold_error,
 							min_size, max_size, drawline, quadtreepo2);
 					if (jpegcomp)
-						render_jpeg(jpeg, block_size, quality, qtablege);
+						render_jpeg(jpeg, block_size, quality, qtablege, subsampling_index);
 				}
 				image_to_opengl(jpeg, image_texturef, image_texturef_zoom);
 			}

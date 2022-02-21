@@ -222,7 +222,7 @@ void render_quadtree(JpegView* jpeg, int max_depth, int threshold_error,
 }
 
 void render_quadtree_jpeg(JpegView* jpeg, int max_depth, int threshold_error,
-	int min_size, int max_size, bool drawline, int quality, bool qtablege)
+	int min_size, int max_size, bool drawline, int quality, bool qtablege, int subsampling_index)
 {
 	deletemod(&jpeg->final_image);
 
@@ -247,7 +247,8 @@ void render_quadtree_jpeg(JpegView* jpeg, int max_depth, int threshold_error,
 	mwidth = round_up_block_size(mwidth, max_size);
 	mheight = round_up_block_size(mheight, max_size);
 
-	uint8_t** YCbCr = image_to_matrix(jpeg->original_image, jpeg->width, jpeg->height, mwidth, mheight);
+	uint8_t** YCbCr = image_to_matrix(jpeg->original_image,
+		jpeg->width, jpeg->height, mwidth, mheight, subsampling_index);
 
 	int tablesize = max_size / 2;
 	float** DCTTable = new float*[tablesize] {};
