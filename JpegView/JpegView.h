@@ -455,67 +455,106 @@ uint8_t** image_to_matrix(uint8_t* original_image,
         {
             case 1: // 4:4:0
             {
-                for (int y = 0; y < height; y += 2)
+                for (int i = 1; i < 3; i++)
                 {
-                    for (int x = 0; x < width; x += 4)
+                    for (int y = 0; y < height; y += 2)
                     {
-                        int indexYCbCr = y * mwidth + x;
-                        int indexYCbCrtwo = (y + 1) * mwidth + x;
-                        for (int i = 0; i < 4; i++)
-                            YCbCr[1][indexYCbCrtwo + i] = YCbCr[1][indexYCbCr + i];
+                        for (int x = 0; x < width; x += 4)
+                        {
+                            int indexYCbCr = y * mwidth + x;
+                            int indexYCbCrtwo = (y + 1) * mwidth + x;
+                            YCbCr[i][indexYCbCrtwo + 0] = YCbCr[i][indexYCbCr + 0];
+                            YCbCr[i][indexYCbCrtwo + 1] = YCbCr[i][indexYCbCr + 1];
+                            YCbCr[i][indexYCbCrtwo + 2] = YCbCr[i][indexYCbCr + 2];
+                            YCbCr[i][indexYCbCrtwo + 3] = YCbCr[i][indexYCbCr + 3];
+                        }
                     }
                 }
                 break;
             }
             case 2: // 4:2:2
             {
-                for (int y = 0; y < height; y += 2)
+                for (int i = 1; i < 3; i++)
                 {
-                    for (int x = 0; x < width; x += 4)
+                    for (int y = 0; y < height; y += 2)
                     {
-                        int indexYCbCr = y * mwidth + x;
-                        YCbCr[1][indexYCbCr + 1] = YCbCr[1][indexYCbCr];
-                        YCbCr[1][indexYCbCr + 3] = YCbCr[1][indexYCbCr + 2];
+                        for (int x = 0; x < width; x += 4)
+                        {
+                            int indexYCbCr = y * mwidth + x;
+                            YCbCr[i][indexYCbCr + 1] = YCbCr[i][indexYCbCr];
+                            YCbCr[i][indexYCbCr + 3] = YCbCr[i][indexYCbCr + 2];
 
-                        int indexYCbCrtwo = (y + 1) * mwidth + x;
-                        YCbCr[1][indexYCbCrtwo + 1] = YCbCr[1][indexYCbCrtwo];
-                        YCbCr[1][indexYCbCrtwo + 3] = YCbCr[1][indexYCbCrtwo + 2];
+                            int indexYCbCrtwo = (y + 1) * mwidth + x;
+                            YCbCr[i][indexYCbCrtwo + 1] = YCbCr[i][indexYCbCrtwo];
+                            YCbCr[i][indexYCbCrtwo + 3] = YCbCr[i][indexYCbCrtwo + 2];
+                        }
                     }
                 }
                 break;
             }
             case 3: // 4:2:0
             {
-                for (int y = 0; y < height; y += 2)
+                for (int i = 1; i < 3; i++)
                 {
-                    for (int x = 0; x < width; x += 4)
+                    for (int y = 0; y < height; y += 2)
                     {
-                        int indexYCbCr = y * mwidth + x;
-                        YCbCr[1][indexYCbCr + 1] = YCbCr[1][indexYCbCr];
-                        YCbCr[1][indexYCbCr + 3] = YCbCr[1][indexYCbCr + 2];
+                        for (int x = 0; x < width; x += 4)
+                        {
+                            int indexYCbCr = y * mwidth + x;
+                            YCbCr[i][indexYCbCr + 1] = YCbCr[i][indexYCbCr];
+                            YCbCr[i][indexYCbCr + 3] = YCbCr[i][indexYCbCr + 2];
 
-                        int indexYCbCrtwo = (y + 1) * mwidth + x;
-                        for (int i = 0; i < 2; i++)
-                            YCbCr[1][indexYCbCrtwo + i] = YCbCr[1][indexYCbCr];
-                        for (int i = 2; i < 4; i++)
-                            YCbCr[1][indexYCbCrtwo + i] = YCbCr[1][indexYCbCr + 2];
+                            int indexYCbCrtwo = (y + 1) * mwidth + x;
+                            YCbCr[i][indexYCbCrtwo + 0] = YCbCr[i][indexYCbCr];
+                            YCbCr[i][indexYCbCrtwo + 1] = YCbCr[i][indexYCbCr];                         
+                            YCbCr[i][indexYCbCrtwo + 2] = YCbCr[i][indexYCbCr + 2];
+                            YCbCr[i][indexYCbCrtwo + 3] = YCbCr[i][indexYCbCr + 2];
+                        }
                     }
                 }
                 break;
             }
             case 4: // 4:1:1
             {
-                for (int y = 0; y < height; y += 2)
+                for (int i = 1; i < 3; i++)
                 {
-                    for (int x = 0; x < width; x += 4)
+                    for (int y = 0; y < height; y += 2)
                     {
-                        int indexYCbCr = y * mwidth + x;
-                        for (int i = 1; i < 4; i++)
-                            YCbCr[1][indexYCbCr + i] = YCbCr[1][indexYCbCr];
+                        for (int x = 0; x < width; x += 4)
+                        {
+                            int indexYCbCr = y * mwidth + x;
+                            YCbCr[i][indexYCbCr + 1] = YCbCr[i][indexYCbCr];
+                            YCbCr[i][indexYCbCr + 2] = YCbCr[i][indexYCbCr];
+                            YCbCr[i][indexYCbCr + 3] = YCbCr[i][indexYCbCr];
 
-                        int indexYCbCrtwo = (y + 1) * mwidth + x;
-                        for (int i = 1; i < 4; i++)
-                            YCbCr[1][indexYCbCrtwo + i] = YCbCr[1][indexYCbCrtwo];
+                            int indexYCbCrtwo = (y + 1) * mwidth + x;
+                            YCbCr[i][indexYCbCrtwo + 1] = YCbCr[i][indexYCbCrtwo];
+                            YCbCr[i][indexYCbCrtwo + 2] = YCbCr[i][indexYCbCrtwo];
+                            YCbCr[i][indexYCbCrtwo + 3] = YCbCr[i][indexYCbCrtwo];
+                        }
+                    }
+                }
+                break;
+            }
+            case 5: // 4:1:0
+            {
+                for (int i = 1; i < 3; i++)
+                {
+                    for (int y = 0; y < height; y += 2)
+                    {
+                        for (int x = 0; x < width; x += 4)
+                        {
+                            int indexYCbCr = y * mwidth + x;
+                            YCbCr[i][indexYCbCr + 1] = YCbCr[i][indexYCbCr];
+                            YCbCr[i][indexYCbCr + 2] = YCbCr[i][indexYCbCr];
+                            YCbCr[i][indexYCbCr + 3] = YCbCr[i][indexYCbCr];
+
+                            int indexYCbCrtwo = (y + 1) * mwidth + x;
+                            YCbCr[i][indexYCbCrtwo + 0] = YCbCr[i][indexYCbCr];
+                            YCbCr[i][indexYCbCrtwo + 1] = YCbCr[i][indexYCbCr];
+                            YCbCr[i][indexYCbCrtwo + 2] = YCbCr[i][indexYCbCr];
+                            YCbCr[i][indexYCbCrtwo + 3] = YCbCr[i][indexYCbCr];
+                        }
                     }
                 }
                 break;
@@ -630,26 +669,17 @@ JpegView* init_jpeg(uint8_t* original, int width, int height, int block_size)
 
 void render_jpeg(JpegView* jpeg, int block_size, int quality, bool qtablege, int subsampling_index)
 {
-    if (jpeg->block_size != block_size)
+    if (jpeg->block_size != block_size || jpeg->subsampling_index != subsampling_index)
     {
         for (int i = 0; i < 3; i++)
             deletemod(&jpeg->YCbCr[i]);
         deletemod(&jpeg->YCbCr);
 
         jpeg->block_size = block_size;
+        jpeg->subsampling_index = subsampling_index;
 
         jpeg->mwidth = round_up_block_size(jpeg->width, block_size);
         jpeg->mheight = round_up_block_size(jpeg->height, block_size);
-
-        jpeg->YCbCr = image_to_matrix(jpeg->original_image,
-            jpeg->width, jpeg->height, jpeg->mwidth, jpeg->mheight, subsampling_index);
-    }
-
-    if (jpeg->subsampling_index != subsampling_index)
-    {
-        for (int i = 0; i < 3; i++)
-            deletemod(&jpeg->YCbCr[i]);
-        deletemod(&jpeg->YCbCr);
 
         jpeg->YCbCr = image_to_matrix(jpeg->original_image,
             jpeg->width, jpeg->height, jpeg->mwidth, jpeg->mheight, subsampling_index);
@@ -665,4 +695,25 @@ void image_to_opengl(JpegView* jpeg, GLuint image_texturef, GLuint image_texture
 
     glBindTexture(GL_TEXTURE_2D, image_texturef_zoom);
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, jpeg->width, jpeg->height, GL_RGB, GL_UNSIGNED_BYTE, jpeg->final_image);
+}
+
+void render_ycbcr(JpegView* jpeg, int block_size, int subsampling_index, GLuint image_texturef, GLuint image_texturef_zoom)
+{
+    if (jpeg->subsampling_index != subsampling_index)
+    {
+        deletemod(&jpeg->final_image);
+
+        for (int i = 0; i < 3; i++)
+            deletemod(&jpeg->YCbCr[i]);
+        deletemod(&jpeg->YCbCr);
+
+        jpeg->subsampling_index = subsampling_index;
+
+        jpeg->YCbCr = image_to_matrix(jpeg->original_image,
+            jpeg->width, jpeg->height, jpeg->mwidth, jpeg->mheight, subsampling_index);
+
+        jpeg->final_image = matrix_to_image(jpeg->YCbCr, jpeg->width, jpeg->height, jpeg->mwidth);
+
+        image_to_opengl(jpeg, image_texturef, image_texturef_zoom);
+    }
 }

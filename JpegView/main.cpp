@@ -84,7 +84,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 	bool qtablege = true;
 	bool drawline = true;
 	bool quadtree = false;
-	bool quadtreepo2 = false;
+	bool quadtreepow2 = false;
 
 	GLuint image_textureo;
 	GLuint image_texturef;
@@ -96,7 +96,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 
 	int quality = 90, block_size = 8, subsampling_index = 0;
 	const char* subsampling_items[] = { 
-		"4:4:4", "4:4:0", "4:2:2", "4:2:0", "4:1:1"
+		"4:4:4", "4:4:0", "4:2:2", "4:2:0", "4:1:1", "4:1:0"
 	};
 
 	int max_depth = 50, threshold_error = 5;
@@ -298,9 +298,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 				ImGui::Text("Block Size:"); ImGui::SameLine();
 				ImGui::SetNextItemWidth(firstcolumn - GImGui->CurrentWindow->DC.CursorPos.x);
 				ImGui::DragInt("##inputb", &block_size, 2.f, 2, 256);
-				ImGui::Text("Chroma Subsampling:"); ImGui::SameLine();
-				ImGui::SetNextItemWidth(firstcolumn - GImGui->CurrentWindow->DC.CursorPos.x);
-				ImGui::Combo("##list", &subsampling_index, subsampling_items, IM_ARRAYSIZE(subsampling_items));
+				ImGui::AlignTextToFramePadding();
 				ImGui::Checkbox("Use Generated Quantization Table?", &qtablege);
 				ImGui::Checkbox("Show Compression Rate?", &jpeg->compression_rate);
 				if (jpeg->compression_rate)
@@ -344,12 +342,13 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 
 			ImGui::NextColumn();
 
+			float secondcolumn = ImGui::GetColumnWidth(0) + (ImGui::GetColumnWidth(1) * 0.90f);
+
 			ImGui::AlignTextToFramePadding();
 			ImGui::Checkbox("Use QuadTree?", &quadtree);
 			if (quadtree)
 			{
 				ImGui::Indent();
-				float secondcolumn = ImGui::GetColumnWidth(0) + (ImGui::GetColumnWidth(1) * 0.90f);
 				ImGui::AlignTextToFramePadding(); ImGui::Bullet();
 				ImGui::Text("Max Depth:"); ImGui::SameLine();
 				ImGui::SetNextItemWidth(secondcolumn - GImGui->CurrentWindow->DC.CursorPos.x);
@@ -366,10 +365,15 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 				ImGui::Text("Max Quad Size:"); ImGui::SameLine();
 				ImGui::SetNextItemWidth(secondcolumn - GImGui->CurrentWindow->DC.CursorPos.x);
 				ImGui::DragInt("##inputmaxs", &max_size, 2.f, 4, max_sizemax);			
-				ImGui::Checkbox("Use Quad Size Power Of 2", &quadtreepo2);
+				ImGui::Checkbox("Use Quad Size Power Of 2", &quadtreepow2);
 				ImGui::Checkbox("Draw Quadrant Line?", &drawline);
 				ImGui::Unindent();
 			}
+
+			ImGui::AlignTextToFramePadding(); ImGui::Bullet();
+			ImGui::Text("Chroma Subsampling:"); ImGui::SameLine();
+			ImGui::SetNextItemWidth(secondcolumn - GImGui->CurrentWindow->DC.CursorPos.x);
+			ImGui::Combo("##list", &subsampling_index, subsampling_items, IM_ARRAYSIZE(subsampling_items));
 
 			if (max_depth >= max_depthmax)
 			{
@@ -402,16 +406,21 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 				{
 					render_quadtree_jpeg(jpeg, max_depth, threshold_error,
 						min_size, max_size, drawline, quality, qtablege, subsampling_index);
+					image_to_opengl(jpeg, image_texturef, image_texturef_zoom);
+				}
+				else if (!quadtree && !jpegcomp)
+				{
+					render_ycbcr(jpeg, block_size, subsampling_index, image_texturef, image_texturef_zoom);
 				}
 				else 
 				{
 					if (quadtree)
 						render_quadtree(jpeg, max_depth, threshold_error,
-							min_size, max_size, drawline, quadtreepo2);
+							min_size, max_size, drawline, quadtreepow2, subsampling_index);
 					if (jpegcomp)
 						render_jpeg(jpeg, block_size, quality, qtablege, subsampling_index);
+					image_to_opengl(jpeg, image_texturef, image_texturef_zoom);
 				}
-				image_to_opengl(jpeg, image_texturef, image_texturef_zoom);
 			}
 
 			float newwidth = ImGui::GetContentRegionAvail().x / 2.f - GImGui->Style.ItemSpacing.x;

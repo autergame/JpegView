@@ -171,12 +171,12 @@ int next_power_of_2(int n)
 }
 
 void render_quadtree(JpegView* jpeg, int max_depth, int threshold_error,
-	int min_size, int max_size, bool drawline, bool quadtreepo2)
+	int min_size, int max_size, bool drawline, bool quadtreepow2, int subsampling_index)
 {
 	deletemod(&jpeg->final_image);
 
 	quadnode* root = nullptr;
-	if (quadtreepo2)
+	if (quadtreepow2)
 	{
 		int squaresize = next_power_of_2(jpeg->width > jpeg->height ? jpeg->width : jpeg->height);
 		root = init_quad(jpeg->original_image, jpeg->width, jpeg->height, 0, 0, squaresize, squaresize, 0);
