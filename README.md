@@ -1,7 +1,7 @@
 # JpegView
 How To Jpeg DCT quantize and QuadTree Compression Works
 
-Help From:
+## Help From:
 * https://github.com/yacinemezaguer/JPEGVis
 * https://github.com/leogouttefarde/JPEG
 * https://github.com/TannerYork/Region-Quadtree

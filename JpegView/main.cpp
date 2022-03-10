@@ -1,5 +1,44 @@
 //author https://github.com/autergame
+
+#pragma comment(lib, "opengl32")
+#pragma comment(lib, "glfw3")
+
+#pragma warning(push, 0)
+
+#define STB_IMAGE_IMPLEMENTATION
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image.h"
+#define __STDC_LIB_EXT1__
+#include "stb_image_write.h"
+#undef __STDC_LIB_EXT1__
+
+#include <windows.h>
+
+#include <glad/glad.h>
+
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3.h>
+#include <GLFW/glfw3native.h>
+
+#define IMGUI_DEFINE_MATH_OPERATORS
+#include <imgui/imgui.h>
+#include <imgui/imgui_impl_glfw.h>
+#include <imgui/imgui_impl_opengl3.h>
+#include <imgui/imgui_internal.h>
+
+#pragma warning(pop)
+
+#include <inttypes.h>
+#include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <ctype.h>
+#include <math.h>
+
+#include <vector>
+
 #include "JpegView.h"
+#include "sha512.h"
 #include "QuadTree.h"
 
 double GetTimeSinceStart(LARGE_INTEGER Frequencye, LARGE_INTEGER Starte)
@@ -82,31 +121,41 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 	bool usezoom = true;
 	bool jpegcomp = true;
 	bool qtablege = true;
+	bool useycbcr = true;
 	bool drawline = true;
 	bool quadtree = false;
 	bool quadtreepow2 = false;
 
-	GLuint image_textureo;
-	GLuint image_texturef;
-	GLuint image_textureo_zoom;
-	GLuint image_texturef_zoom;
+	GLuint image_textureo = 0;
+	GLuint image_texturef = 0;
+	GLuint image_textureo_zoom = 0;
+	GLuint image_texturef_zoom = 0;
 
 	ImVec2 uv_min = ImVec2(0.f, 0.f);
 	ImVec2 uv_max = ImVec2(1.f, 1.f);
 
-	int quality = 90, block_size = 8, subsampling_index = 0;
+	int quality = 90, block_size = 8;
+	int subsampling_index = 0, block_size_index = 2;
+
+	const char* block_size_items[] = {
+		"2", "4", "8", "16", "32", "64", "128", "256"
+	};
 	const char* subsampling_items[] = { 
 		"4:4:4", "4:4:0", "4:2:2", "4:2:0", "4:1:1", "4:1:0"
 	};
 
 	int max_depth = 50, threshold_error = 5;
 	int min_size = 8, max_size = 32;
+	int min_size_index = 2, max_size_index = 4;
 
 	int max_depthmax = 100, threshold_errormax = 100;
 	int min_sizemax = 128, max_sizemax = 256;
 
 	JpegView* jpeg = nullptr;
 	int swidth, sheight, schannels;
+
+	quadnode* rootquad = nullptr;
+	std::vector<quadnode*> rootquadlist;
 
 	float Deltatime = 0, Lastedtime = 0;
 	char windowTitle[64] = { '\0' };
@@ -117,12 +166,12 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 
 #define TESTBIN
 #if defined TESTBIN && defined _DEBUG
-	const char* teststr = "C:\\Users\\autergame\\Pictures\\testpattern.png";
+	const char* teststr = "C:\\Users\\autergame\\Pictures\\jpeg_testpattern.png";
 	uint8_t* img = stbi_load(teststr, &swidth, &sheight, &schannels, 3);
 	if (img != nullptr)
 	{
 		memcpy(openFile, teststr, strlen(teststr));
-		jpeg = init_jpeg(img, swidth, sheight, block_size);
+		jpeg = init_jpeg(img, swidth, sheight, block_size, useycbcr);
 		image_textureo = create_image(img, swidth, sheight, true);
 		image_texturef = create_image(jpeg->final_image, swidth, sheight, true);
 		image_textureo_zoom = create_image(img, swidth, sheight, false);
@@ -172,12 +221,13 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 				ofn.hwndOwner = glfwWindowNative;
 				ofn.lpstrFile = openFile_temp;
 				ofn.nMaxFile = MAX_PATH;
-				ofn.lpstrFilter = 
-					"Image Files (*.jpg;*.jpeg;*.png;*.bmp)\0*.jpg;*.jpeg;*.png;*.bmp\0"
-					"JPG Image (*.jpg;*.jpeg)\0*.jpg;*.jpeg\0"
+				ofn.lpstrFilter =
+					"Image Files (*.jpg;*.jpeg;*.png;*.bmp;*.qmi)\0*.jpg;*.jpeg;*.png;*.bmp;*.qmi\0"
+					"JPG JPEG Image (*.jpg;*.jpeg)\0*.jpg;*.jpeg\0"
 					"PNG Image (*.png)\0*.png\0"
 					"BMP Image (*.bmp)\0*.bmp\0"
-					"All Files (*.*)\0*.*\0";
+					"QUADMIND Image (*.qmi)\0*.qmi\0";
+					//"All Files (*.*)\0*.*\0";
 				ofn.nFilterIndex = 1;
 				ofn.lpstrFileTitle = nullptr;
 				ofn.nMaxFileTitle = 0;
@@ -186,18 +236,27 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 
 				if (GetOpenFileNameA(&ofn) == TRUE)
 				{
-					if (openFile_temp[0] != '\0')
-					{
-						memset(openFile, 0, MAX_PATH);
-						memcpy(openFile, openFile_temp, MAX_PATH);
+					memset(openFile, 0, MAX_PATH);
+					memcpy(openFile, openFile_temp, MAX_PATH);
 
+					for (int i = ofn.nFileExtension; i < strlen(openFile_temp); i++)
+						openFile_temp[i] = tolower(openFile_temp[i]);
+
+					uint8_t* img;
+					if (ofn.nFilterIndex != 5 && strcmp(openFile_temp + ofn.nFileExtension, "qmi") != 0)
+						img = stbi_load(openFile, &swidth, &sheight, &schannels, 3);
+					else
+						img = loadquad(openFile, &swidth, &sheight);
+					if (img != nullptr)
+					{
+						clean_node(&rootquad);
 						if (jpeg != nullptr)
 						{
 							deletemod(&jpeg->original_image);
 							deletemod(&jpeg->final_image);
 							for (int i = 0; i < 3; i++)
-								deletemod(&jpeg->YCbCr[i]);
-							deletemod(&jpeg->YCbCr);
+								deletemod(&jpeg->image_converted[i]);
+							deletemod(&jpeg->image_converted);
 							deletemod(&jpeg);
 
 							glDeleteTextures(1, &image_textureo);
@@ -206,18 +265,14 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 							glDeleteTextures(1, &image_texturef_zoom);
 						}
 
-						uint8_t* img = stbi_load(openFile, &swidth, &sheight, &schannels, 3);
-						if (img != nullptr)
-						{
-							jpeg = init_jpeg(img, swidth, sheight, block_size);
-							image_textureo = create_image(img, swidth, sheight, true);
-							image_texturef = create_image(jpeg->final_image, swidth, sheight, true);
-							image_textureo_zoom = create_image(img, swidth, sheight, false);
-							image_texturef_zoom = create_image(jpeg->final_image, swidth, sheight, false);
-						}
-						else
-							MessageBoxA(nullptr, "Error in loading the image", "ERROR", MB_OK | MB_ICONERROR | MB_TOPMOST);
+						jpeg = init_jpeg(img, swidth, sheight, block_size, useycbcr);
+						image_textureo = create_image(img, swidth, sheight, true);
+						image_texturef = create_image(jpeg->final_image, swidth, sheight, true);
+						image_textureo_zoom = create_image(img, swidth, sheight, false);
+						image_texturef_zoom = create_image(jpeg->final_image, swidth, sheight, false);
 					}
+					else
+						MessageBoxA(nullptr, "Error in loading the image", "ERROR", MB_OK | MB_ICONERROR | MB_TOPMOST);
 				}
 			}
 			if (openFile[0] != '\0')
@@ -232,8 +287,9 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 					ofn.hwndOwner = glfwWindowNative;
 					ofn.lpstrFile = saveFile;
 					ofn.nMaxFile = MAX_PATH;
-					ofn.lpstrFilter = "PNG Image (*.png)\0*.png\0";
-					ofn.lpstrDefExt = "png";
+					ofn.lpstrFilter = "PNG Image (*.png)\0*.png\0"
+									  "QUADMIND Image (*.qmi)\0*.qmi\0";
+					ofn.lpstrDefExt = "png\0qmi";
 					ofn.nFilterIndex = 1;
 					ofn.lpstrFileTitle = nullptr;
 					ofn.nMaxFileTitle = 0;
@@ -242,7 +298,13 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 
 					if (GetSaveFileNameA(&ofn) == TRUE)
 					{
-						stbi_write_png(saveFile, jpeg->width, jpeg->height, 3, jpeg->final_image, 0);
+						int saved = 0;
+						if (ofn.nFilterIndex == 1)
+							saved = stbi_write_png(saveFile, jpeg->width, jpeg->height, 3, jpeg->final_image, 0);
+						else if (ofn.nFilterIndex == 2)
+							saved = savequad(saveFile, rootquadlist, jpeg->width, jpeg->height, quality, qtablege, useycbcr);
+						if (!saved)
+							MessageBoxA(nullptr, "Error in saving the image", "ERROR", MB_OK | MB_ICONERROR | MB_TOPMOST);
 					}
 				}
 			}
@@ -258,6 +320,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 				ImGui::Text("Image Size: %d %d", jpeg->width, jpeg->height); ImGui::SameLine();
 				if (ImGui::Button("Close Image"))
 				{
+					clean_node(&rootquad);
 					if (jpeg != nullptr)
 					{
 						memset(openFile, 0, MAX_PATH);
@@ -265,8 +328,8 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 						deletemod(&jpeg->original_image);
 						deletemod(&jpeg->final_image);
 						for (int i = 0; i < 3; i++)
-							deletemod(&jpeg->YCbCr[i]);
-						deletemod(&jpeg->YCbCr);
+							deletemod(&jpeg->image_converted[i]);
+						deletemod(&jpeg->image_converted);
 						deletemod(&jpeg);
 
 						glDeleteTextures(1, &image_textureo);
@@ -297,7 +360,8 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 				ImGui::AlignTextToFramePadding(); ImGui::Bullet();
 				ImGui::Text("Block Size:"); ImGui::SameLine();
 				ImGui::SetNextItemWidth(firstcolumn - GImGui->CurrentWindow->DC.CursorPos.x);
-				ImGui::DragInt("##inputb", &block_size, 2.f, 2, 256);
+				if (ImGui::Combo("##list_block", &block_size_index, block_size_items, IM_ARRAYSIZE(block_size_items)))
+					block_size = 1 << (block_size_index + 1);
 				ImGui::AlignTextToFramePadding();
 				ImGui::Checkbox("Use Generated Quantization Table?", &qtablege);
 				ImGui::Checkbox("Show Compression Rate?", &jpeg->compression_rate);
@@ -312,6 +376,8 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 				}
 				ImGui::Unindent();
 			}
+
+			ImGui::SeparatorEx(ImGuiSeparatorFlags_Horizontal);
 
 			ImGui::AlignTextToFramePadding();
 			ImGui::Checkbox("Use Zoom?", &usezoom);
@@ -360,21 +426,28 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 				ImGui::AlignTextToFramePadding(); ImGui::Bullet();
 				ImGui::Text("Min Quad Size:"); ImGui::SameLine();
 				ImGui::SetNextItemWidth(secondcolumn - GImGui->CurrentWindow->DC.CursorPos.x);
-				ImGui::DragInt("##inputmins", &min_size, 2.f, 2, min_sizemax);
+				if (ImGui::Combo("##list_block_min", &min_size_index, block_size_items, IM_ARRAYSIZE(block_size_items)))
+					min_size = 1 << (min_size_index + 1);
 				ImGui::AlignTextToFramePadding(); ImGui::Bullet();
 				ImGui::Text("Max Quad Size:"); ImGui::SameLine();
 				ImGui::SetNextItemWidth(secondcolumn - GImGui->CurrentWindow->DC.CursorPos.x);
-				ImGui::DragInt("##inputmaxs", &max_size, 2.f, 4, max_sizemax);			
+				if (ImGui::Combo("##list_block_max", &max_size_index, block_size_items, IM_ARRAYSIZE(block_size_items)))
+					max_size = 1 << (max_size_index + 1);
+				ImGui::AlignTextToFramePadding();
 				ImGui::Checkbox("Use Quad Size Power Of 2", &quadtreepow2);
 				ImGui::Checkbox("Draw Quadrant Line?", &drawline);
 				ImGui::Unindent();
 			}
 
+			ImGui::SeparatorEx(ImGuiSeparatorFlags_Horizontal);
+
+			ImGui::AlignTextToFramePadding();
+			ImGui::Checkbox("Use YCbCr Colors?", &useycbcr);
 			ImGui::AlignTextToFramePadding(); ImGui::Bullet();
 			ImGui::Text("Chroma Subsampling:"); ImGui::SameLine();
 			ImGui::SetNextItemWidth(secondcolumn - GImGui->CurrentWindow->DC.CursorPos.x);
-			ImGui::Combo("##list", &subsampling_index, subsampling_items, IM_ARRAYSIZE(subsampling_items));
-
+			ImGui::Combo("##list_sub", &subsampling_index, subsampling_items, IM_ARRAYSIZE(subsampling_items));
+			
 			if (max_depth >= max_depthmax)
 			{
 				max_depthmax += 100;
@@ -385,16 +458,6 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 				threshold_errormax += 100;
 				threshold_error -= 10;
 			}
-			if (min_size >= min_sizemax)
-			{
-				min_sizemax += 100;
-				min_size -= 10;
-			}
-			if (max_size >= max_sizemax)
-			{
-				max_sizemax += 100;
-				max_size -= 10;
-			}
 
 			ImGui::Columns();
 
@@ -404,23 +467,36 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 			{
 				if (quadtree && jpegcomp)
 				{
-					render_quadtree_jpeg(jpeg, max_depth, threshold_error,
-						min_size, max_size, drawline, quality, qtablege, subsampling_index);
-					image_to_opengl(jpeg, image_texturef, image_texturef_zoom);
+					clean_node(&rootquad);
+					rootquadlist = render_quadtree_jpeg(&rootquad, jpeg, max_depth, threshold_error,
+						min_size, max_size, drawline, quality, qtablege, subsampling_index, useycbcr);
 				}
 				else if (!quadtree && !jpegcomp)
 				{
-					render_ycbcr(jpeg, block_size, subsampling_index, image_texturef, image_texturef_zoom);
+					deletemod(&jpeg->final_image);
+					if (useycbcr)
+					{
+						render_ycbcr(jpeg, block_size, subsampling_index);
+						jpeg->final_image = YCbCr_matrix_to_image(jpeg->image_converted, jpeg->width, jpeg->height, jpeg->mwidth);
+					} 
+					else
+					{
+						render_rgb(jpeg, block_size, subsampling_index);
+						jpeg->final_image = RGB_matrix_to_image(jpeg->image_converted, jpeg->width, jpeg->height, jpeg->mwidth);
+					}
 				}
 				else 
 				{
 					if (quadtree)
-						render_quadtree(jpeg, max_depth, threshold_error,
+					{
+						clean_node(&rootquad);
+						rootquadlist = render_quadtree(&rootquad, jpeg, max_depth, threshold_error,
 							min_size, max_size, drawline, quadtreepow2, subsampling_index);
-					if (jpegcomp)
-						render_jpeg(jpeg, block_size, quality, qtablege, subsampling_index);
-					image_to_opengl(jpeg, image_texturef, image_texturef_zoom);
+					}
+					else if (jpegcomp)
+						render_jpeg(jpeg, block_size, quality, qtablege, subsampling_index, block_size_index, useycbcr);
 				}
+				image_to_opengl(jpeg, image_texturef, image_texturef_zoom);
 			}
 
 			float newwidth = ImGui::GetContentRegionAvail().x / 2.f - GImGui->Style.ItemSpacing.x;
@@ -452,13 +528,14 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 		glfwSwapBuffers(glfwWindow);
 	}
 
+	clean_node(&rootquad);
 	if (jpeg != nullptr)
 	{
 		deletemod(&jpeg->original_image);
 		deletemod(&jpeg->final_image);
 		for (int i = 0; i < 3; i++)
-			deletemod(&jpeg->YCbCr[i]);
-		deletemod(&jpeg->YCbCr);
+			deletemod(&jpeg->image_converted[i]);
+		deletemod(&jpeg->image_converted);
 		deletemod(&jpeg);
 
 		glDeleteTextures(1, &image_textureo);
