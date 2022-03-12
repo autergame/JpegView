@@ -1,30 +1,31 @@
+//author https://github.com/autergame
+#pragma once
+
 #include <stdlib.h>
 #include <stdbool.h>
-#include <stddef.h>
 #include <windows.h>
 #include <synchapi.h>
-#include <time.h>
 
 typedef void (*thread_func)(void* arg);
 
-struct thread_pool_work 
+typedef struct thread_pool_work_t
 {
     thread_func func;
-    void* arg;          
-    struct thread_pool_work* next;
-};
+    void* arg;
+    struct thread_pool_work_t* next;
+} thread_pool_work;
 
-struct thread_pool 
+typedef struct thread_pool_
 {
     thread_pool_work* work_first;
     thread_pool_work* work_last;
     CRITICAL_SECTION work_mutex;
     CONDITION_VARIABLE work_cond;
     CONDITION_VARIABLE working_cond;
-    size_t working_counter;             
-    size_t thread_counter;           
-    bool stop;                  
-};
+    size_t working_counter;
+    size_t thread_counter;
+    bool stop;
+} thread_pool;
 
 static thread_pool_work* thread_pool_work_get(thread_pool* tp)
 {
@@ -42,7 +43,7 @@ static DWORD WINAPI thread_pool_worker(LPVOID arg)
     thread_pool* tp = (thread_pool*)arg;
     thread_pool_work* work;
 
-    while (1) 
+    while (1)
     {
         EnterCriticalSection(&(tp->work_mutex));
         if (tp->stop)
@@ -55,10 +56,10 @@ static DWORD WINAPI thread_pool_worker(LPVOID arg)
         tp->working_counter++;
         LeaveCriticalSection(&(tp->work_mutex));
 
-        if (work != NULL) 
+        if (work != NULL)
         {
             work->func(work->arg);
-            deletemod(&work);
+            free(work);
         }
 
         EnterCriticalSection(&(tp->work_mutex));
@@ -81,7 +82,7 @@ static DWORD WINAPI thread_pool_worker(LPVOID arg)
 
 thread_pool* thread_pool_create(size_t num)
 {
-    thread_pool* tp = new thread_pool{};
+    thread_pool* tp = (thread_pool*)calloc(1, sizeof(thread_pool));
     tp->thread_counter = num;
 
     InitializeCriticalSection(&(tp->work_mutex));
@@ -127,7 +128,7 @@ void thread_pool_destroy(thread_pool* tp)
     while (work != NULL)
     {
         work2 = work->next;
-        deletemod(&work);
+        free(work);
         work = work2;
     }
     tp->stop = true;
@@ -139,19 +140,19 @@ void thread_pool_destroy(thread_pool* tp)
 
     DeleteCriticalSection(&(tp->work_mutex));
 
-    deletemod(&tp);
+    free(tp);
 }
 
 bool thread_pool_add_work(thread_pool* tp, thread_func func, void* arg)
 {
-    thread_pool_work* work = new thread_pool_work{};
+    thread_pool_work* work = (thread_pool_work*)calloc(1, sizeof(thread_pool_work));
     work->func = func;
     work->arg = arg;
     work->next = NULL;
 
     EnterCriticalSection(&(tp->work_mutex));
 
-    if (tp->work_first == NULL) 
+    if (tp->work_first == NULL)
     {
         tp->work_first = work;
         tp->work_last = tp->work_first;
@@ -176,10 +177,10 @@ int get_cpu_threads()
     if (GetLastError() != ERROR_INSUFFICIENT_BUFFER)
         return 1;
 
-    info = (PSYSTEM_LOGICAL_PROCESSOR_INFORMATION) new uint8_t[len];
+    info = (PSYSTEM_LOGICAL_PROCESSOR_INFORMATION)calloc(1, len);
     if (!GetLogicalProcessorInformation(info, &len))
     {
-        deletemod(&info);
+        free(info);
         return 1;
     }
 
@@ -190,22 +191,22 @@ int get_cpu_threads()
     {
         switch (info[i].Relationship)
         {
-            case RelationProcessorCore:
+        case RelationProcessorCore:
+        {
+            n = info[i].ProcessorMask;
+            while (n > 0)
             {
-                n = info[i].ProcessorMask;
-                while (n > 0)
-                {
-                    n &= n - 1;
-                    num++;
-                }
-                break;
+                n &= n - 1;
+                num++;
             }
-            default:
-                break;
+            break;
+        }
+        default:
+            break;
         }
     }
 
-    deletemod(&info);
+    free(info);
 
     if (num == 0)
         num = 1;
