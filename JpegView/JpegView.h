@@ -34,16 +34,6 @@ function_dct functions_idct[] = {
 	&idct_256x256
 };
 
-template <class T>
-void deletemod(T** ptr)
-{
-	if (*ptr != nullptr)
-	{
-		free(*ptr);
-		*ptr = nullptr;
-	}
-}
-
 uint8_t minmaxcolor(float color)
 {
 	if (color > 255.f)
@@ -251,32 +241,32 @@ float* generate_QMatrix(const float* qMatrix_base, int block_size, float factor,
 	return qMatrix;
 }
 
-//float* generate_DCT_table(int block_size)
-//{
-//	float* DCTTable = new float[block_size * block_size]{};
-//	for (int y = 0; y < block_size; y++)
-//	{
-//		for (int x = 0; x < block_size; x++)
-//		{
-//			DCTTable[y * block_size + x] = cosf((2.f * y + 1.f) * x * 3.141592f / (2.f * block_size));
-//		}
-//	}
-//	return DCTTable;
-//}
+float* generate_DCT_table(int block_size)
+{
+	float* DCTTable = new float[block_size * block_size]{};
+	for (int y = 0; y < block_size; y++)
+	{
+		for (int x = 0; x < block_size; x++)
+		{
+			DCTTable[y * block_size + x] = cosf((2.f * y + 1.f) * x * 3.141592f / (2.f * block_size));
+		}
+	}
+	return DCTTable;
+}
 
-//float* generate_Alpha_table(int block_size)
-//{
-//	float sqrt1_2 = 1.f / sqrtf(2.f);
-//	float* alphaTable = new float[block_size * block_size]{};
-//	for (int y = 0; y < block_size; y++)
-//	{
-//		for (int x = 0; x < block_size; x++)
-//		{
-//			alphaTable[y * block_size + x] = (y == 0 ? sqrt1_2 : 1.f) * (x == 0 ? sqrt1_2 : 1.f);
-//		}
-//	}
-//	return alphaTable;
-//}
+float* generate_Alpha_table(int block_size)
+{
+	float sqrt1_2 = 1.f / sqrtf(2.f);
+	float* alphaTable = new float[block_size * block_size]{};
+	for (int y = 0; y < block_size; y++)
+	{
+		for (int x = 0; x < block_size; x++)
+		{
+			alphaTable[y * block_size + x] = (y == 0 ? sqrt1_2 : 1.f) * (x == 0 ? sqrt1_2 : 1.f);
+		}
+	}
+	return alphaTable;
+}
 
 int* generate_ZigZag_table(int block_size)
 {
@@ -307,15 +297,16 @@ struct jpeg_steps_struct
 {
 	float* image_block;
 	float* DCTMatrix;
-	//float* DCTTable;
-	//float* alphaTable;
+	float* DCTTable;
+	float* alphaTable;
 	int* ZigZagtable;
 	int block_size;
-	//float block;
+	float two_block;
 	int mwidth;
 	int start_x;
 	int start_y;
 	int block_size_index;
+	bool usefastdct;
 	bool compression_rate;
 	int quality_start;
 	float Q_control;
@@ -349,73 +340,85 @@ void DeZigZag_function(jpeg_steps_struct* jss, int16_t* DCTMatrix_zigzag)
 
 void DCT_function(jpeg_steps_struct* jss, uint8_t* image_converted)
 {
-	for (int y = 0; y < jss->block_size; y++)
+	if (jss->usefastdct)
 	{
-		for (int x = 0; x < jss->block_size; x++)
+		for (int y = 0; y < jss->block_size; y++)
 		{
-			int index = y * jss->block_size + x;
-			int indeximage = (jss->start_y + y) * jss->mwidth + (jss->start_x + x);
-			jss->image_block[index] = (image_converted[indeximage] - 128.f);
+			for (int x = 0; x < jss->block_size; x++)
+			{
+				int index = y * jss->block_size + x;
+				int indeximage = (jss->start_y + y) * jss->mwidth + (jss->start_x + x);
+				jss->image_block[index] = (image_converted[indeximage] - 128.f);
+			}
+		}
+		functions_fdct[jss->block_size_index](jss->DCTMatrix, jss->image_block);
+	}
+	else
+	{
+		for (int v = 0; v < jss->block_size; v++)
+		{
+			for (int u = 0; u < jss->block_size; u++)
+			{
+				float sum = 0.0f;
+				for (int y = 0; y < jss->block_size; y++)
+				{
+					for (int x = 0; x < jss->block_size; x++)
+					{
+						int index = (jss->start_y + y) * jss->mwidth + (jss->start_x + x);
+
+						float xu = jss->DCTTable[x * jss->block_size + u];
+						float yv = jss->DCTTable[y * jss->block_size + v];
+
+						sum += (image_converted[index] - 128.f) * xu * yv;
+					}
+				}
+
+				int index = v * jss->block_size + u;
+				jss->DCTMatrix[index] = jss->alphaTable[index] * sum * jss->two_block;
+			}
 		}
 	}
-	functions_fdct[jss->block_size_index](jss->DCTMatrix, jss->image_block);
-	//for (int v = 0; v < jss->block_size; v++)
-	//{
-	//	for (int u = 0; u < jss->block_size; u++)
-	//	{
-	//		float sum = 0.0f;
-	//		for (int y = 0; y < jss->block_size; y++)
-	//		{
-	//			for (int x = 0; x < jss->block_size; x++)
-	//			{
-	//				int index = (jss->start_y + y) * jss->mwidth + (jss->start_x + x);
-
-	//				float xu = jss->DCTTable[x * jss->block_size + u];
-	//				float yv = jss->DCTTable[y * jss->block_size + v];
-
-	//				sum += (image_converted[index] - 128.f) * xu * yv;
-	//			}
-	//		}
-
-	//		int index = v * jss->block_size + u;
-	//		jss->DCTMatrix[index] = jss->alphaTable[index] * sum * jss->block;
-	//	}
-	//}
 }
 
 void inverse_DCT_function(jpeg_steps_struct* jss, uint8_t* result)
 {
-	functions_idct[jss->block_size_index](jss->image_block, jss->DCTMatrix);
-	for (int y = 0; y < jss->block_size; y++)
+	if (jss->usefastdct)
 	{
-		for (int x = 0; x < jss->block_size; x++)
+		functions_idct[jss->block_size_index](jss->image_block, jss->DCTMatrix);
+		for (int y = 0; y < jss->block_size; y++)
 		{
-			int index = y * jss->block_size + x;
-			int indexresult = (jss->start_y + y) * jss->mwidth + (jss->start_x + x);
-			result[indexresult] = minmaxcolor(jss->image_block[index] + 128.f);
+			for (int x = 0; x < jss->block_size; x++)
+			{
+				int index = y * jss->block_size + x;
+				int indexresult = (jss->start_y + y) * jss->mwidth + (jss->start_x + x);
+				result[indexresult] = minmaxcolor(jss->image_block[index] + 128.f);
+			}
 		}
 	}
-	//for (int y = 0; y < jss->block_size; y++)
-	//{
-	//	for (int x = 0; x < jss->block_size; x++)
-	//	{
-	//		float sum = 0.f;
-	//		for (int v = 0; v < jss->block_size; v++)
-	//		{
-	//			for (int u = 0; u < jss->block_size; u++)
-	//			{
-	//				float xu = jss->DCTTable[x * jss->block_size + u];
-	//				float yv = jss->DCTTable[y * jss->block_size + v];
+	else
+	{
+		for (int y = 0; y < jss->block_size; y++)
+		{
+			for (int x = 0; x < jss->block_size; x++)
+			{
+				float sum = 0.f;
+				for (int v = 0; v < jss->block_size; v++)
+				{
+					for (int u = 0; u < jss->block_size; u++)
+					{
+						float xu = jss->DCTTable[x * jss->block_size + u];
+						float yv = jss->DCTTable[y * jss->block_size + v];
 
-	//				int index = v * jss->block_size + u;
-	//				sum += jss->alphaTable[index] * jss->DCTMatrix[index] * xu * yv;
-	//			}
-	//		}
+						int index = v * jss->block_size + u;
+						sum += jss->alphaTable[index] * jss->DCTMatrix[index] * xu * yv;
+					}
+				}
 
-	//		int index = (jss->start_y + y) * jss->mwidth + (jss->start_x + x);
-	//		result[index] = minmaxcolor((sum * jss->block) + 128.f);
-	//	}
-	//}
+				int index = (jss->start_y + y) * jss->mwidth + (jss->start_x + x);
+				result[index] = minmaxcolor((sum * jss->two_block) + 128.f);
+			}
+		}
+	}
 }
 
 void Quantize_function(jpeg_steps_struct* jss, float* qMatrix)
@@ -486,7 +489,7 @@ void JPEG_steps(jpeg_steps_struct* jss, uint8_t* result, uint8_t* image_converte
 	inverse_DCT_function(jss, result);
 }
 
-void JPEG_steps_decompress_load(jpeg_steps_struct* jss, uint8_t* result, float* qMatrix, int16_t* DCTMatrix_zigzag)
+void Quad_JPEG_steps_decompress_load(jpeg_steps_struct* jss, uint8_t* result, float* qMatrix, int16_t* DCTMatrix_zigzag)
 {
 	DeZigZag_function(jss, DCTMatrix_zigzag);
 	DeQuantize_function(jss, qMatrix);
@@ -503,50 +506,150 @@ int16_t* Quad_JPEG_steps(jpeg_steps_struct* jss, uint8_t* result, uint8_t* image
 	return DCTMatrix_zigzag;
 }
 
-uint8_t** Encode(uint8_t** image_converted, float* qMatrix_luma, float* qMatrix_chroma,
-	int block_size, int block_size_index, int mwidth, int mheight, bool compression_rate, int quality_start)
+struct jpeg_steps_struct_func
 {
-	float* image_block = new float[block_size * block_size]{};
-	float* DCTMatrix = new float[block_size * block_size]{};
-	//float* DCTTable = generate_DCT_table(block_size);
-	//float* alphaTable = generate_Alpha_table(block_size);
+	jpeg_steps_struct* jss;
+	uint8_t** result;
+	uint8_t** image_converted;
+	float* qMatrix_luma;
+	float* qMatrix_chroma;
+};
 
-	jpeg_steps_struct* jss = new jpeg_steps_struct{};
-	jss->image_block = image_block;
-	jss->DCTMatrix = DCTMatrix;
-	jss->mwidth = mwidth;
-	jss->block_size = block_size;
-	jss->block_size_index = block_size_index;
-	//jss->DCTTable = DCTTable;
-	//jss->alphaTable = alphaTable;
-	//jss->block = 2.f / (float)block_size;
-	jss->compression_rate = compression_rate;
-	jss->quality_start = quality_start;
-	jss->Q_control = 100.f - quality_start;
+void render_jpeg_func(void* arg)
+{
+	jpeg_steps_struct_func* jssf = (jpeg_steps_struct_func*)arg;
+
+	jpeg_steps_struct* jss = jssf->jss;
+	uint8_t** image_converted = jssf->image_converted;
+	uint8_t** result = jssf->result;
+	float* qMatrix_luma = jssf->qMatrix_luma;
+	float* qMatrix_chroma = jssf->qMatrix_chroma;
+
+	JPEG_steps(jss, result[0], image_converted[0], qMatrix_luma);
+	JPEG_steps(jss, result[1], image_converted[1], qMatrix_chroma);
+	JPEG_steps(jss, result[2], image_converted[2], qMatrix_chroma);
+
+	deletemod(&jss->image_block);
+	deletemod(&jss->DCTMatrix);
+
+	deletemod(&jss);
+	deletemod(&jssf);
+}
+
+uint8_t** Encode(uint8_t** image_converted, float* qMatrix_luma, float* qMatrix_chroma,
+	int block_size, int block_size_index, int mwidth, int mheight, bool compression_rate,
+	int quality_start, bool usethreads, bool usefastdct)
+{
+	float* DCTTable = nullptr, *alphaTable = nullptr;
+	if (!usefastdct)
+	{
+		DCTTable = generate_DCT_table(block_size);
+		alphaTable = generate_Alpha_table(block_size);
+	}
 
 	uint8_t** result = new uint8_t*[3]{};
 	result[0] = new uint8_t[mheight * mwidth]{};
 	result[1] = new uint8_t[mheight * mwidth]{};
 	result[2] = new uint8_t[mheight * mwidth]{};
 
-	for (int by = 0; by < mheight; by += block_size)
+	int threads = 0;
+	if (usethreads)
 	{
-		for (int bx = 0; bx < mwidth; bx += block_size)
+		threads = get_cpu_threads();
+		if (threads <= 1)
 		{
-			jss->start_x = bx;
-			jss->start_y = by;
-
-			JPEG_steps(jss, result[0], image_converted[0], qMatrix_luma);
-			JPEG_steps(jss, result[1], image_converted[1], qMatrix_chroma);
-			JPEG_steps(jss, result[2], image_converted[2], qMatrix_chroma);
+			usethreads = false;
 		}
 	}
 
-	deletemod(&jss);
-	deletemod(&DCTMatrix);
-	deletemod(&image_block);
-	//deletemod(&DCTTable);
-	//deletemod(&alphaTable);
+	if (usethreads)
+	{
+		thread_pool* threadpool = thread_pool_create(threads);
+
+		for (int by = 0; by < mheight; by += block_size)
+		{
+			for (int bx = 0; bx < mwidth; bx += block_size)
+			{
+				jpeg_steps_struct* jss = new jpeg_steps_struct{};
+				jss->image_block = new float[block_size * block_size]{};
+				jss->DCTMatrix = new float[block_size * block_size]{};
+				jss->mwidth = mwidth;
+				jss->block_size = block_size;
+				jss->block_size_index = block_size_index;
+				jss->usefastdct = usefastdct;
+				if (!usefastdct)
+				{
+					jss->DCTTable = DCTTable;
+					jss->alphaTable = alphaTable;
+					jss->two_block = 2.f / (float)block_size;
+				}
+				jss->compression_rate = compression_rate;
+				jss->quality_start = quality_start;
+				jss->Q_control = 100.f - quality_start;
+
+				jss->start_x = bx;
+				jss->start_y = by;
+
+				jpeg_steps_struct_func* jssf = new jpeg_steps_struct_func{};
+				jssf->jss = jss;
+				jssf->result = result;
+				jssf->qMatrix_chroma = qMatrix_chroma;
+				jssf->qMatrix_luma = qMatrix_luma;
+				jssf->image_converted = image_converted;
+
+				thread_pool_add_work(threadpool, render_jpeg_func, jssf);
+			}
+		}
+
+		thread_pool_wait(threadpool);
+		thread_pool_destroy(threadpool);
+	}
+	else
+	{
+		float* image_block = new float[block_size * block_size]{};
+		float* DCTMatrix = new float[block_size * block_size]{};
+
+		jpeg_steps_struct* jss = new jpeg_steps_struct{};
+		jss->image_block = image_block;
+		jss->DCTMatrix = DCTMatrix;
+		jss->mwidth = mwidth;
+		jss->block_size = block_size;
+		jss->block_size_index = block_size_index;
+		jss->usefastdct = usefastdct;
+		if (!usefastdct)
+		{
+			jss->DCTTable = DCTTable;
+			jss->alphaTable = alphaTable;
+			jss->two_block = 2.f / (float)block_size;
+		}
+		jss->compression_rate = compression_rate;
+		jss->quality_start = quality_start;
+		jss->Q_control = 100.f - quality_start;
+
+		for (int by = 0; by < mheight; by += block_size)
+		{
+			for (int bx = 0; bx < mwidth; bx += block_size)
+			{
+				jss->start_x = bx;
+				jss->start_y = by;
+
+				JPEG_steps(jss, result[0], image_converted[0], qMatrix_luma);
+				JPEG_steps(jss, result[1], image_converted[1], qMatrix_chroma);
+				JPEG_steps(jss, result[2], image_converted[2], qMatrix_chroma);
+			}
+		}
+
+		deletemod(&DCTMatrix);
+		deletemod(&image_block);
+
+		deletemod(&jss);
+	}
+
+	if (!usefastdct)
+	{
+		deletemod(&DCTTable);
+		deletemod(&alphaTable);
+	}
 	return result;
 }
 
@@ -863,7 +966,7 @@ void render_rgb(JpegView* jpeg, int block_size, int subsampling_index)
 }
 
 void render_jpeg(JpegView* jpeg, int block_size, int quality, bool qtablege,
-	int subsampling_index, int block_size_index, bool useycbcr)
+	int subsampling_index, int block_size_index, bool useycbcr, bool usethreads, bool usefastdct)
 {
 	if (jpeg->block_size != block_size || jpeg->subsampling_index != subsampling_index || jpeg->useycbcr != useycbcr)
 	{
@@ -894,7 +997,8 @@ void render_jpeg(JpegView* jpeg, int block_size, int quality, bool qtablege,
 
 
 	uint8_t** image_convertedmodified = Encode(jpeg->image_converted, qMatrix_luma, qMatrix_chroma,
-		jpeg->block_size, block_size_index, jpeg->mwidth, jpeg->mheight, jpeg->compression_rate, jpeg->quality_start);
+		jpeg->block_size, block_size_index, jpeg->mwidth, jpeg->mheight, jpeg->compression_rate,
+		jpeg->quality_start, usethreads, usefastdct);
 
 	deletemod(&jpeg->final_image);
 	if (useycbcr)

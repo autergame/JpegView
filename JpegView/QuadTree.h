@@ -321,7 +321,39 @@ int savequad(char* filename, std::vector<quadnode*>& listquad,
 	return 1;
 }
 
-uint8_t* loadquad(char* filename, int* width, int* height)
+struct jpeg_steps_struct_quad_load
+{
+	jpeg_steps_struct* jss;
+	uint8_t** result;
+	int16_t* dctmzzblocks;
+	float* qMatrix_luma;
+	float* qMatrix_chroma;
+};
+
+void render_quadtree_jpeg_load(void* arg)
+{
+	jpeg_steps_struct_quad_load* jssq = (jpeg_steps_struct_quad_load*)arg;
+
+	int16_t* dctmzzblocks = jssq->dctmzzblocks;
+	jpeg_steps_struct* jss = jssq->jss;
+	uint8_t** result = jssq->result;
+	float* qMatrix_luma = jssq->qMatrix_luma;
+	float* qMatrix_chroma = jssq->qMatrix_chroma;
+
+	int blocksizefull = (jss->block_size * jss->block_size);
+
+	Quad_JPEG_steps_decompress_load(jss, result[0], qMatrix_luma, dctmzzblocks);
+	Quad_JPEG_steps_decompress_load(jss, result[1], qMatrix_chroma, dctmzzblocks + blocksizefull);
+	Quad_JPEG_steps_decompress_load(jss, result[2], qMatrix_chroma, dctmzzblocks + blocksizefull + blocksizefull);
+
+	deletemod(&jss->image_block);
+	deletemod(&jss->DCTMatrix);
+
+	deletemod(&jss);
+	deletemod(&jssq);
+}
+
+uint8_t* loadquad(char* filename, int* width, int* height, bool usethreads, bool usefastdct)
 {
 	FILE* filequad;
 	errno_t err = fopen_s(&filequad, filename, "rb");
@@ -493,25 +525,21 @@ uint8_t* loadquad(char* filename, int* width, int* height)
 
 			int tablesize = log2i(max_size);
 
-			//float** DCTTable = new float*[tablesize]{};
-			//for (int i = 0; i < tablesize; i++)
-			//	DCTTable[i] = generate_DCT_table(1 << (i + 1));
+			float** DCTTable = nullptr, **alphaTable = nullptr;
+			if (!usefastdct)
+			{
+				DCTTable = new float*[tablesize]{};
+				for (int i = 0; i < tablesize; i++)
+					DCTTable[i] = generate_DCT_table(1 << (i + 1));
 
-			//float** alphaTable = new float*[tablesize]{};
-			//for (int i = 0; i < tablesize; i++)
-			//	alphaTable[i] = generate_Alpha_table(1 << (i + 1));
+				alphaTable = new float*[tablesize]{};
+				for (int i = 0; i < tablesize; i++)
+					alphaTable[i] = generate_Alpha_table(1 << (i + 1));
+			}
 
 			int** DeZigZagtable = new int* [tablesize] {};
 			for (int i = 0; i < tablesize; i++)
 				DeZigZagtable[i] = generate_ZigZag_table(1 << (i + 1));
-
-			float** image_block = new float* [tablesize] {};
-			for (int i = 0; i < tablesize; i++)
-				image_block[i] = new float[(1 << (i + 1)) * (1 << (i + 1))]{};
-
-			float** DCTMatrix = new float* [tablesize] {};
-			for (int i = 0; i < tablesize; i++)
-				DCTMatrix[i] = new float[(1 << (i + 1)) * (1 << (i + 1))]{};
 
 			float factor = (float)squality;
 			if (factor >= 50.f && factor <= 99.f)
@@ -529,37 +557,120 @@ uint8_t* loadquad(char* filename, int* width, int* height)
 			result[1] = new uint8_t[mheight * mwidth]{};
 			result[2] = new uint8_t[mheight * mwidth]{};
 
-			jpeg_steps_struct* jss = new jpeg_steps_struct{};
-			jss->mwidth = mwidth;
-
-			int index = 0;
+			int indexdctmake = 0;
+			int16_t** dctmzzblocks = new int16_t*[quadlistsize]{};
 			for (uint32_t i = 0; i < quadlistsize; i++)
 			{
 				quadnodejpeg* quad = &qnjarray[i];
-
 				int block_size = 1 << (int)quad->block_size;
 				int quadblocksizefull = (block_size * block_size);
-				int tableindex = log2i(block_size) - 1;
 
-				jss->image_block = image_block[tableindex];
-				jss->DCTMatrix = DCTMatrix[tableindex];
-				jss->ZigZagtable = DeZigZagtable[tableindex];
-				//jss->DCTTable = DCTTable[tableindex];
-				//jss->alphaTable = alphaTable[tableindex];
-				//jss->block = 2.f / (float)quadblocksize;
-				jss->block_size = block_size;
-				jss->block_size_index = tableindex;
-				jss->start_x = quad->x;
-				jss->start_y = quad->y;
+				dctmzzblocks[i] = dctmzzarray + indexdctmake;
+				indexdctmake += quadblocksizefull * 3;
+			}
 
-				JPEG_steps_decompress_load(jss, result[0], qMatrix_luma, dctmzzarray + index);
-				index += quadblocksizefull;
+			int threads = 0;
+			if (usethreads)
+			{
+				threads = get_cpu_threads();
+				if (threads <= 1)
+				{
+					usethreads = false;
+				}
+			}
 
-				JPEG_steps_decompress_load(jss, result[1], qMatrix_chroma, dctmzzarray + index);
-				index += quadblocksizefull;
+			if (usethreads)
+			{
+				thread_pool* threadpool = thread_pool_create(threads);
 
-				JPEG_steps_decompress_load(jss, result[2], qMatrix_chroma, dctmzzarray + index);
-				index += quadblocksizefull;
+				for (uint32_t i = 0; i < quadlistsize; i++)
+				{
+					quadnodejpeg* quad = &qnjarray[i];
+
+					int block_size = 1 << (int)quad->block_size;
+					int blocksizefull = (block_size * block_size);
+					int tableindex = log2i(block_size) - 1;
+
+					jpeg_steps_struct* jss = new jpeg_steps_struct{};
+					jss->mwidth = mwidth;
+					jss->image_block = new float[blocksizefull]{};
+					jss->DCTMatrix = new float[blocksizefull]{};
+					jss->ZigZagtable = DeZigZagtable[tableindex];
+					jss->usefastdct = usefastdct;
+					if (!usefastdct)
+					{
+						jss->DCTTable = DCTTable[tableindex];
+						jss->alphaTable = alphaTable[tableindex];
+						jss->two_block = 2.f / (float)block_size;
+					}
+					jss->block_size = block_size;
+					jss->block_size_index = tableindex;
+					jss->start_x = quad->x;
+					jss->start_y = quad->y;
+
+					jpeg_steps_struct_quad_load* jssq = new jpeg_steps_struct_quad_load{};
+					jssq->jss = jss;
+					jssq->result = result;
+					jssq->qMatrix_chroma = qMatrix_chroma;
+					jssq->qMatrix_luma = qMatrix_luma;
+					jssq->dctmzzblocks = dctmzzblocks[i];
+
+					thread_pool_add_work(threadpool, render_quadtree_jpeg_load, jssq);
+				}
+
+				thread_pool_wait(threadpool);
+				thread_pool_destroy(threadpool);
+			}
+			else
+			{
+				jpeg_steps_struct* jss = new jpeg_steps_struct{};
+				jss->usefastdct = usefastdct;
+				jss->mwidth = mwidth;
+
+				float** image_block = new float* [tablesize] {};
+				for (int i = 0; i < tablesize; i++)
+					image_block[i] = new float[(1 << (i + 1)) * (1 << (i + 1))]{};
+
+				float** DCTMatrix = new float* [tablesize] {};
+				for (int i = 0; i < tablesize; i++)
+					DCTMatrix[i] = new float[(1 << (i + 1)) * (1 << (i + 1))]{};
+
+				for (uint32_t i = 0; i < quadlistsize; i++)
+				{
+					quadnodejpeg* quad = &qnjarray[i];
+
+					int block_size = 1 << (int)quad->block_size;
+					int blocksizefull = (block_size * block_size);
+					int tableindex = log2i(block_size) - 1;
+
+					jss->image_block = image_block[tableindex];
+					jss->DCTMatrix = DCTMatrix[tableindex];
+					jss->ZigZagtable = DeZigZagtable[tableindex];
+					if (!usefastdct)
+					{
+						jss->DCTTable = DCTTable[tableindex];
+						jss->alphaTable = alphaTable[tableindex];
+						jss->two_block = 2.f / (float)block_size;
+					}
+					jss->block_size = block_size;
+					jss->block_size_index = tableindex;
+					jss->start_x = quad->x;
+					jss->start_y = quad->y;
+
+					Quad_JPEG_steps_decompress_load(jss, result[0], qMatrix_luma, dctmzzblocks[i]);
+					Quad_JPEG_steps_decompress_load(jss, result[1], qMatrix_chroma, dctmzzblocks[i] + blocksizefull);
+					Quad_JPEG_steps_decompress_load(jss, result[2], qMatrix_chroma, dctmzzblocks[i] + blocksizefull + blocksizefull);
+				}
+
+				for (int i = 0; i < tablesize; i++)
+				{
+					deletemod(&DCTMatrix[i]);
+					deletemod(&image_block[i]);
+				}
+				deletemod(&DCTMatrix);
+				deletemod(&image_block);
+
+				deletemod(&jss);
 			}
 
 			if (useycbcr)
@@ -567,23 +678,24 @@ uint8_t* loadquad(char* filename, int* width, int* height)
 			else
 				resultimage = RGB_matrix_to_image(result, iwidth, iheight, mwidth);
 
-			deletemod(&jss);
 			deletemod(&qMatrix_luma);
 			deletemod(&qMatrix_chroma);
 
 			for (int i = 0; i < tablesize; i++)
 			{
-				deletemod(&DCTMatrix[i]);
-				deletemod(&image_block[i]);
 				deletemod(&DeZigZagtable[i]);
-				//deletemod(&alphaTable[i]);
-				//deletemod(&DCTTable[i]);
+				if (!usefastdct)
+				{
+					deletemod(&alphaTable[i]);
+					deletemod(&DCTTable[i]);
+				}
 			}
-			deletemod(&DCTMatrix);
-			deletemod(&image_block);
 			deletemod(&DeZigZagtable);
-			//deletemod(&alphaTable);
-			//deletemod(&DCTTable);
+			if (!usefastdct)
+			{
+				deletemod(&alphaTable);
+				deletemod(&DCTTable);
+			}
 
 			for (int i = 0; i < 3; i++)
 				deletemod(&result[i]);
@@ -591,6 +703,7 @@ uint8_t* loadquad(char* filename, int* width, int* height)
 			deletemod(&result);
 			deletemod(&qnjarray);
 			deletemod(&dctmzzarray);
+			deletemod(&dctmzzblocks);
 		}
 	}
 
@@ -645,8 +758,41 @@ std::vector<quadnode*> render_quadtree(quadnode** rootquad, JpegView* jpeg, int 
 	return listquad;
 }
 
-std::vector<quadnode*> render_quadtree_jpeg(quadnode** rootquad, JpegView* jpeg, int max_depth, int threshold_error,
-	int min_size, int max_size, bool drawline, int quality, bool qtablege, int subsampling_index, bool useycbcr)
+struct jpeg_steps_struct_quad
+{
+	int16_t** DCTMatrix_zigzag;
+	jpeg_steps_struct* jss;
+	uint8_t** result;
+	uint8_t** image_converted;
+	float* qMatrix_luma;
+	float* qMatrix_chroma;
+};
+
+void render_quadtree_jpeg_func(void* arg)
+{
+	jpeg_steps_struct_quad* jssq = (jpeg_steps_struct_quad*)arg;
+
+	int16_t** DCTMatrix_zigzag = jssq->DCTMatrix_zigzag;
+	jpeg_steps_struct* jss = jssq->jss;
+	uint8_t** result = jssq->result;
+	uint8_t** image_converted = jssq->image_converted;
+	float* qMatrix_luma = jssq->qMatrix_luma;
+	float* qMatrix_chroma = jssq->qMatrix_chroma;
+
+	DCTMatrix_zigzag[0] = Quad_JPEG_steps(jss, result[0], image_converted[0], qMatrix_luma);
+	DCTMatrix_zigzag[1] = Quad_JPEG_steps(jss, result[1], image_converted[1], qMatrix_chroma);
+	DCTMatrix_zigzag[2] = Quad_JPEG_steps(jss, result[2], image_converted[2], qMatrix_chroma);
+
+	deletemod(&jss->image_block);
+	deletemod(&jss->DCTMatrix);
+
+	deletemod(&jss);
+	deletemod(&jssq);
+}
+
+std::vector<quadnode*> render_quadtree_jpeg(quadnode** rootquad, JpegView* jpeg, int max_depth,
+	int threshold_error, int min_size, int max_size, bool drawline, int quality, bool qtablege,
+	int subsampling_index, bool useycbcr, bool usethreads, bool usefastdct)
 {
 	int squaresize = next_power_of_2(jpeg->width > jpeg->height ? jpeg->width : jpeg->height);
 	*rootquad = init_quad(jpeg->original_image, jpeg->width, jpeg->height, 0, 0, squaresize, squaresize, 0);
@@ -679,25 +825,21 @@ std::vector<quadnode*> render_quadtree_jpeg(quadnode** rootquad, JpegView* jpeg,
 
 	int tablesize = log2i(max_size);
 
-	//float** DCTTable = new float*[tablesize]{};
-	//for (int i = 0; i < tablesize; i++)
-	//	DCTTable[i] = generate_DCT_table(1 << (i + 1));
+	float** DCTTable = nullptr, **alphaTable = nullptr;
+	if (!usefastdct)
+	{
+		DCTTable = new float* [tablesize] {};
+		for (int i = 0; i < tablesize; i++)
+			DCTTable[i] = generate_DCT_table(1 << (i + 1));
 
-	//float** alphaTable = new float*[tablesize]{};
-	//for (int i = 0; i < tablesize; i++)
-	//	alphaTable[i] = generate_Alpha_table(1 << (i + 1));
+		alphaTable = new float* [tablesize] {};
+		for (int i = 0; i < tablesize; i++)
+			alphaTable[i] = generate_Alpha_table(1 << (i + 1));
+	}
 
 	int** ZigZagtable = new int*[tablesize]{};
 	for (int i = 0; i < tablesize; i++)
 		ZigZagtable[i] = generate_ZigZag_table(1 << (i + 1));
-
-	float** image_block = new float*[tablesize]{};
-	for (int i = 0; i < tablesize; i++)
-		image_block[i] = new float[(1 << (i + 1)) * (1 << (i + 1))]{};
-
-	float** DCTMatrix = new float*[tablesize] {};
-	for (int i = 0; i < tablesize; i++)
-		DCTMatrix[i] = new float[(1 << (i + 1)) * (1 << (i + 1))]{};
 
 	float* qMatrix_luma, *qMatrix_chroma;
 	if (!jpeg->compression_rate)
@@ -722,34 +864,111 @@ std::vector<quadnode*> render_quadtree_jpeg(quadnode** rootquad, JpegView* jpeg,
 	result[1] = new uint8_t[mheight * mwidth]{};
 	result[2] = new uint8_t[mheight * mwidth]{};
 
-	jpeg_steps_struct* jss = new jpeg_steps_struct{};
-	jss->mwidth = mwidth;
-	jss->compression_rate = jpeg->compression_rate;
-	jss->quality_start = jpeg->quality_start;
-	jss->Q_control = 100.f - jpeg->quality_start;
-
-	for (size_t i = 0; i < listquad.size(); i++)
+	int threads = 0;
+	if (usethreads)
 	{
-		quadnode* quad = listquad[i];
+		threads = get_cpu_threads();
+		if (threads <= 1)
+		{
+			usethreads = false;
+		}
+	}
 
-		int quadblocksize = quad->width_block_size > quad->height_block_size 
-			? quad->width_block_size : quad->height_block_size;
-		int tableindex = log2i(quadblocksize) - 1;
+	if (usethreads)
+	{
+		thread_pool* threadpool = thread_pool_create(threads);
 
-		jss->image_block = image_block[tableindex];
-		jss->DCTMatrix = DCTMatrix[tableindex];
-		jss->ZigZagtable = ZigZagtable[tableindex];
-		//jss->DCTTable = DCTTable[tableindex];
-		//jss->alphaTable = alphaTable[tableindex];
-		//jss->block = 2.f / (float)quadblocksize;
-		jss->block_size = quadblocksize;
-		jss->block_size_index = tableindex;
-		jss->start_x = quad->boxl;
-		jss->start_y = quad->boxt;
+		for (uint32_t i = 0; i < listquad.size(); i++)
+		{
+			quadnode* quad = listquad[i];
 
-		quad->DCTMatrix_zigzag[0] = Quad_JPEG_steps(jss, result[0], image_converted[0], qMatrix_luma);
-		quad->DCTMatrix_zigzag[1] = Quad_JPEG_steps(jss, result[1], image_converted[1], qMatrix_chroma);
-		quad->DCTMatrix_zigzag[2] = Quad_JPEG_steps(jss, result[2], image_converted[2], qMatrix_chroma);
+			int tableindex = log2i(quad->width_block_size) - 1;
+
+			jpeg_steps_struct* jss = new jpeg_steps_struct{};
+			jss->mwidth = mwidth;
+			jss->compression_rate = jpeg->compression_rate;
+			jss->quality_start = jpeg->quality_start;
+			jss->Q_control = 100.f - jpeg->quality_start;
+			jss->image_block = new float[quad->width_block_size * quad->width_block_size]{};
+			jss->DCTMatrix = new float[quad->width_block_size * quad->width_block_size]{};
+			jss->ZigZagtable = ZigZagtable[tableindex];
+			jss->usefastdct = usefastdct;
+			if (!usefastdct)
+			{
+				jss->DCTTable = DCTTable[tableindex];
+				jss->alphaTable = alphaTable[tableindex];
+				jss->two_block = 2.f / (float)quad->width_block_size;
+			}
+			jss->block_size = quad->width_block_size;
+			jss->block_size_index = tableindex;
+			jss->start_x = quad->boxl;
+			jss->start_y = quad->boxt;
+
+			jpeg_steps_struct_quad* jssq = new jpeg_steps_struct_quad{};
+			jssq->jss = jss;
+			jssq->result = result;
+			jssq->image_converted = image_converted;
+			jssq->qMatrix_chroma = qMatrix_chroma;
+			jssq->qMatrix_luma = qMatrix_luma;
+			jssq->DCTMatrix_zigzag = quad->DCTMatrix_zigzag;
+
+			thread_pool_add_work(threadpool, render_quadtree_jpeg_func, jssq);
+		}
+
+		thread_pool_wait(threadpool);
+		thread_pool_destroy(threadpool);
+	}
+	else
+	{
+		jpeg_steps_struct* jss = new jpeg_steps_struct{};
+		jss->mwidth = mwidth;
+		jss->usefastdct = usefastdct;
+		jss->compression_rate = jpeg->compression_rate;
+		jss->quality_start = jpeg->quality_start;
+		jss->Q_control = 100.f - jpeg->quality_start;
+
+		float** image_block = new float* [tablesize] {};
+		for (int i = 0; i < tablesize; i++)
+			image_block[i] = new float[(1 << (i + 1)) * (1 << (i + 1))]{};
+
+		float** DCTMatrix = new float* [tablesize] {};
+		for (int i = 0; i < tablesize; i++)
+			DCTMatrix[i] = new float[(1 << (i + 1)) * (1 << (i + 1))]{};
+
+		for (uint32_t i = 0; i < listquad.size(); i++)
+		{
+			quadnode* quad = listquad[i];
+
+			int tableindex = log2i(quad->width_block_size) - 1;
+
+			jss->image_block = image_block[tableindex];
+			jss->DCTMatrix = DCTMatrix[tableindex];
+			jss->ZigZagtable = ZigZagtable[tableindex];
+			if (!usefastdct)
+			{
+				jss->DCTTable = DCTTable[tableindex];
+				jss->alphaTable = alphaTable[tableindex];
+				jss->two_block = 2.f / (float)quad->width_block_size;
+			}
+			jss->block_size = quad->width_block_size;
+			jss->block_size_index = tableindex;
+			jss->start_x = quad->boxl;
+			jss->start_y = quad->boxt;
+
+			quad->DCTMatrix_zigzag[0] = Quad_JPEG_steps(jss, result[0], image_converted[0], qMatrix_luma);
+			quad->DCTMatrix_zigzag[1] = Quad_JPEG_steps(jss, result[1], image_converted[1], qMatrix_chroma);
+			quad->DCTMatrix_zigzag[2] = Quad_JPEG_steps(jss, result[2], image_converted[2], qMatrix_chroma);
+		}
+
+		for (int i = 0; i < tablesize; i++)
+		{
+			deletemod(&DCTMatrix[i]);
+			deletemod(&image_block[i]);
+		}
+		deletemod(&DCTMatrix);
+		deletemod(&image_block);
+
+		deletemod(&jss);
 	}
 
 	deletemod(&jpeg->final_image);
@@ -769,23 +988,24 @@ std::vector<quadnode*> render_quadtree_jpeg(quadnode** rootquad, JpegView* jpeg,
 		}
 	}
 
-	deletemod(&jss);
 	deletemod(&qMatrix_luma);
 	deletemod(&qMatrix_chroma);
 
 	for (int i = 0; i < tablesize; i++)
 	{
-		deletemod(&DCTMatrix[i]);
-		deletemod(&image_block[i]);
 		deletemod(&ZigZagtable[i]);
-		//deletemod(&alphaTable[i]);
-		//deletemod(&DCTTable[i]);
+		if (!usefastdct)
+		{
+			deletemod(&alphaTable[i]);
+			deletemod(&DCTTable[i]);
+		}
 	}
-	deletemod(&DCTMatrix);
-	deletemod(&image_block);
 	deletemod(&ZigZagtable);
-	//deletemod(&alphaTable);
-	//deletemod(&DCTTable);
+	if (!usefastdct)
+	{
+		deletemod(&alphaTable);
+		deletemod(&DCTTable);
+	}
 
 	for (int i = 0; i < 3; i++)
 	{

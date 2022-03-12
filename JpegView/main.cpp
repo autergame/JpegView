@@ -37,6 +37,17 @@
 
 #include <vector>
 
+template <class T>
+void deletemod(T** ptr)
+{
+	if (*ptr != nullptr)
+	{
+		free(*ptr);
+		*ptr = nullptr;
+	}
+}
+
+#include "ThreadPool.h"
 #include "JpegView.h"
 #include "sha512.h"
 #include "QuadTree.h"
@@ -121,7 +132,11 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 	bool usezoom = true;
 	bool jpegcomp = true;
 	bool qtablege = true;
+
 	bool useycbcr = true;
+	bool usethreads = true;
+	bool usefastdct = true;
+
 	bool drawline = true;
 	bool quadtree = false;
 	bool quadtreepow2 = false;
@@ -239,14 +254,14 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 					memset(openFile, 0, MAX_PATH);
 					memcpy(openFile, openFile_temp, MAX_PATH);
 
-					for (int i = ofn.nFileExtension; i < strlen(openFile_temp); i++)
+					for (size_t i = ofn.nFileExtension; i < strlen(openFile_temp); i++)
 						openFile_temp[i] = tolower(openFile_temp[i]);
 
 					uint8_t* img;
 					if (ofn.nFilterIndex != 5 && strcmp(openFile_temp + ofn.nFileExtension, "qmi") != 0)
 						img = stbi_load(openFile, &swidth, &sheight, &schannels, 3);
 					else
-						img = loadquad(openFile, &swidth, &sheight);
+						img = loadquad(openFile, &swidth, &sheight, usethreads, usefastdct);
 					if (img != nullptr)
 					{
 						clean_node(&rootquad);
@@ -442,6 +457,10 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 			ImGui::SeparatorEx(ImGuiSeparatorFlags_Horizontal);
 
 			ImGui::AlignTextToFramePadding();
+			ImGui::Checkbox("Use Fast DCT Algorithm?", &usefastdct);
+			ImGui::AlignTextToFramePadding();
+			ImGui::Checkbox("Use Multi-Threading?", &usethreads);
+			ImGui::AlignTextToFramePadding();
 			ImGui::Checkbox("Use YCbCr Colors?", &useycbcr);
 			ImGui::AlignTextToFramePadding(); ImGui::Bullet();
 			ImGui::Text("Chroma Subsampling:"); ImGui::SameLine();
@@ -468,8 +487,9 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 				if (quadtree && jpegcomp)
 				{
 					clean_node(&rootquad);
-					rootquadlist = render_quadtree_jpeg(&rootquad, jpeg, max_depth, threshold_error,
-						min_size, max_size, drawline, quality, qtablege, subsampling_index, useycbcr);
+					rootquadlist = render_quadtree_jpeg(&rootquad, jpeg, max_depth,
+						threshold_error, min_size, max_size, drawline, quality, qtablege, 
+						subsampling_index, useycbcr, usethreads, usefastdct);
 				}
 				else if (!quadtree && !jpegcomp)
 				{
@@ -477,12 +497,14 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 					if (useycbcr)
 					{
 						render_ycbcr(jpeg, block_size, subsampling_index);
-						jpeg->final_image = YCbCr_matrix_to_image(jpeg->image_converted, jpeg->width, jpeg->height, jpeg->mwidth);
+						jpeg->final_image = YCbCr_matrix_to_image(jpeg->image_converted,
+							jpeg->width, jpeg->height, jpeg->mwidth);
 					} 
 					else
 					{
 						render_rgb(jpeg, block_size, subsampling_index);
-						jpeg->final_image = RGB_matrix_to_image(jpeg->image_converted, jpeg->width, jpeg->height, jpeg->mwidth);
+						jpeg->final_image = RGB_matrix_to_image(jpeg->image_converted,
+							jpeg->width, jpeg->height, jpeg->mwidth);
 					}
 				}
 				else 
@@ -493,8 +515,10 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 						rootquadlist = render_quadtree(&rootquad, jpeg, max_depth, threshold_error,
 							min_size, max_size, drawline, quadtreepow2, subsampling_index);
 					}
-					else if (jpegcomp)
-						render_jpeg(jpeg, block_size, quality, qtablege, subsampling_index, block_size_index, useycbcr);
+					else if (jpegcomp) {
+						render_jpeg(jpeg, block_size, quality, qtablege,
+							subsampling_index, block_size_index, useycbcr, usethreads, usefastdct);
+					}
 				}
 				image_to_opengl(jpeg, image_texturef, image_texturef_zoom);
 			}

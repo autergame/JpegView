@@ -74,7 +74,7 @@ void sha512(const uint8_t* data, uint64_t length, uint8_t out[64])
 	uint64_t a, b, c, d, e, f, g, h, s0, s1, T1, T2;
 	uint64_t X[16];
 
-	size_t blocks = length / 128;
+	uint64_t blocks = length / 128;
 	while (blocks--)
 	{
 		a = state[0];
