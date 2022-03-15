@@ -330,9 +330,9 @@ struct jpeg_steps_struct_quad_load
 	float* qMatrix_chroma;
 };
 
-thread_pool_func(render_quadtree_jpeg_load, arg)
+thread_pool_function(render_quadtree_jpeg_load, arg_var)
 {
-	jpeg_steps_struct_quad_load* jssq = (jpeg_steps_struct_quad_load*)arg;
+	jpeg_steps_struct_quad_load* jssq = (jpeg_steps_struct_quad_load*)arg_var;
 
 	int16_t* dctmzzblocks = jssq->dctmzzblocks;
 	jpeg_steps_struct* jss = jssq->jss;
@@ -767,9 +767,9 @@ struct jpeg_steps_struct_quad
 	float* qMatrix_chroma;
 };
 
-thread_pool_func(render_quadtree_jpeg_func, arg)
+thread_pool_function(render_quadtree_jpeg_func, arg_var)
 {
-	jpeg_steps_struct_quad* jssq = (jpeg_steps_struct_quad*)arg;
+	jpeg_steps_struct_quad* jssq = (jpeg_steps_struct_quad*)arg_var;
 
 	int16_t** DCTMatrix_zigzag = jssq->DCTMatrix_zigzag;
 	jpeg_steps_struct* jss = jssq->jss;

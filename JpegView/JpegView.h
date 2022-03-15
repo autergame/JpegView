@@ -525,9 +525,9 @@ struct jpeg_steps_struct_func
 	float* qMatrix_chroma;
 };
 
-thread_pool_func(render_jpeg_func, arg)
+thread_pool_function(render_jpeg_func, arg_var)
 {
-	jpeg_steps_struct_func* jssf = (jpeg_steps_struct_func*)arg;
+	jpeg_steps_struct_func* jssf = (jpeg_steps_struct_func*)arg_var;
 
 	jpeg_steps_struct* jss = jssf->jss;
 	uint8_t** image_converted = jssf->image_converted;
