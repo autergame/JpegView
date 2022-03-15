@@ -6,210 +6,56 @@
 #include <windows.h>
 #include <synchapi.h>
 
-typedef void (*thread_func)(void* arg);
-
-typedef struct thread_pool_work_t
-{
-    thread_func func;
-    void* arg;
-    struct thread_pool_work_t* next;
-} thread_pool_work;
+#define thread_pool_func(func_name, arg_var) \
+void CALLBACK func_name(PTP_CALLBACK_INSTANCE Instance, PVOID arg_var, PTP_WORK Work)
 
 typedef struct thread_pool_
 {
-    thread_pool_work* work_first;
-    thread_pool_work* work_last;
-    CRITICAL_SECTION work_mutex;
-    CONDITION_VARIABLE work_cond;
-    CONDITION_VARIABLE working_cond;
-    size_t working_counter;
-    size_t thread_counter;
-    bool stop;
+    TP_CALLBACK_ENVIRON CallBackEnviron;
+    PTP_CLEANUP_GROUP cleanupgroup;
+    PTP_POOL pool;
 } thread_pool;
 
-static thread_pool_work* thread_pool_work_get(thread_pool* tp)
-{
-    thread_pool_work* work = tp->work_first;
-    if (work == NULL)
-        return NULL;
-
-    tp->work_first = work->next;
-
-    return work;
-}
-
-static DWORD WINAPI thread_pool_worker(LPVOID arg)
-{
-    thread_pool* tp = (thread_pool*)arg;
-    thread_pool_work* work;
-
-    while (1)
-    {
-        EnterCriticalSection(&(tp->work_mutex));
-        if (tp->stop)
-            break;
-
-        if (tp->work_first == NULL)
-            SleepConditionVariableCS(&(tp->work_cond), &(tp->work_mutex), INFINITE);
-
-        work = thread_pool_work_get(tp);
-        tp->working_counter++;
-        LeaveCriticalSection(&(tp->work_mutex));
-
-        if (work != NULL)
-        {
-            work->func(work->arg);
-            free(work);
-        }
-
-        EnterCriticalSection(&(tp->work_mutex));
-        tp->working_counter--;
-
-        if (!tp->stop && tp->working_counter == 0 && tp->work_first == NULL)
-            WakeConditionVariable(&(tp->working_cond));
-
-        LeaveCriticalSection(&(tp->work_mutex));
-    }
-
-    tp->thread_counter--;
-    if (tp->thread_counter == 0)
-        WakeConditionVariable(&(tp->working_cond));
-
-    LeaveCriticalSection(&(tp->work_mutex));
-
-    return NULL;
-}
-
-thread_pool* thread_pool_create(size_t num)
+thread_pool* thread_pool_create(int cpu_threads)
 {
     thread_pool* tp = (thread_pool*)calloc(1, sizeof(thread_pool));
-    tp->thread_counter = num;
 
-    InitializeCriticalSection(&(tp->work_mutex));
-    InitializeConditionVariable(&(tp->work_cond));
-    InitializeConditionVariable(&(tp->working_cond));
+    InitializeThreadpoolEnvironment(&tp->CallBackEnviron);
 
-    tp->work_first = NULL;
-    tp->work_last = NULL;
+    tp->pool = CreateThreadpool(NULL);
 
-    HANDLE thread;
-    for (size_t i = 0; i < num; i++)
-    {
-        thread = CreateThread(NULL, 0, thread_pool_worker, tp, 0, NULL);
-        CloseHandle(thread);
-    }
+    SetThreadpoolThreadMinimum(tp->pool, cpu_threads);
+    SetThreadpoolThreadMaximum(tp->pool, cpu_threads);
+
+    tp->cleanupgroup = CreateThreadpoolCleanupGroup();
+
+    SetThreadpoolCallbackPool(&tp->CallBackEnviron, tp->pool);
+    SetThreadpoolCallbackCleanupGroup(&tp->CallBackEnviron, tp->cleanupgroup, NULL);
 
     return tp;
 }
 
-void thread_pool_wait(thread_pool* tp)
+void thread_pool_add_work(thread_pool* tp, PTP_WORK_CALLBACK func, void* arg)
 {
-    EnterCriticalSection(&(tp->work_mutex));
-    while (1)
-    {
-        if ((!tp->stop && tp->working_counter != 0) || (tp->stop && tp->thread_counter != 0))
-        {
-            SleepConditionVariableCS(&(tp->working_cond), &(tp->work_mutex), INFINITE);
-        }
-        else {
-            break;
-        }
-    }
-    LeaveCriticalSection(&(tp->work_mutex));
+    PTP_WORK work = CreateThreadpoolWork(func, arg, &tp->CallBackEnviron);
+    SubmitThreadpoolWork(work);
 }
 
 void thread_pool_destroy(thread_pool* tp)
 {
-    EnterCriticalSection(&(tp->work_mutex));
+    CloseThreadpoolCleanupGroupMembers(tp->cleanupgroup, FALSE, NULL);
+    CloseThreadpoolCleanupGroup(tp->cleanupgroup);
 
-    thread_pool_work* work = tp->work_first;
-    thread_pool_work* work2;
+    DestroyThreadpoolEnvironment(&tp->CallBackEnviron);
 
-    while (work != NULL)
-    {
-        work2 = work->next;
-        free(work);
-        work = work2;
-    }
-    tp->stop = true;
-
-    WakeAllConditionVariable(&(tp->work_cond));
-    LeaveCriticalSection(&(tp->work_mutex));
-
-    thread_pool_wait(tp);
-
-    DeleteCriticalSection(&(tp->work_mutex));
+    CloseThreadpool(tp->pool);
 
     free(tp);
 }
 
-bool thread_pool_add_work(thread_pool* tp, thread_func func, void* arg)
-{
-    thread_pool_work* work = (thread_pool_work*)calloc(1, sizeof(thread_pool_work));
-    work->func = func;
-    work->arg = arg;
-    work->next = NULL;
-
-    EnterCriticalSection(&(tp->work_mutex));
-
-    if (tp->work_first == NULL)
-    {
-        tp->work_first = work;
-        tp->work_last = tp->work_first;
-    }
-    else {
-        tp->work_last->next = work;
-        tp->work_last = work;
-    }
-
-    WakeAllConditionVariable(&(tp->work_cond));
-    LeaveCriticalSection(&(tp->work_mutex));
-
-    return true;
-}
-
 int get_cpu_threads()
 {
-    DWORD len = 0;
-    PSYSTEM_LOGICAL_PROCESSOR_INFORMATION info = NULL;
-
-    GetLogicalProcessorInformation(info, &len);
-    if (GetLastError() != ERROR_INSUFFICIENT_BUFFER)
-        return 1;
-
-    info = (PSYSTEM_LOGICAL_PROCESSOR_INFORMATION)calloc(1, len);
-    if (!GetLogicalProcessorInformation(info, &len))
-    {
-        free(info);
-        return 1;
-    }
-
-    int num = 0;
-    ULONG_PTR n;
-    len = len / sizeof(*info);
-    for (DWORD i = 0; i < len; i++)
-    {
-        switch (info[i].Relationship)
-        {
-        case RelationProcessorCore:
-        {
-            n = info[i].ProcessorMask;
-            while (n > 0)
-            {
-                n &= n - 1;
-                num++;
-            }
-            break;
-        }
-        default:
-            break;
-        }
-    }
-
-    free(info);
-
-    if (num == 0)
-        num = 1;
-
-    return num;
+    SYSTEM_INFO sys_info;
+    GetSystemInfo(&sys_info);
+    return sys_info.dwNumberOfProcessors;
 }

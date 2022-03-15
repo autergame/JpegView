@@ -34,6 +34,16 @@ function_dct functions_idct[] = {
 	&idct_256x256
 };
 
+template <class T>
+void deletemod(T** ptr)
+{
+	if (*ptr != nullptr)
+	{
+		free(*ptr);
+		*ptr = nullptr;
+	}
+}
+
 uint8_t minmaxcolor(float color)
 {
 	if (color > 255.f)
@@ -515,7 +525,7 @@ struct jpeg_steps_struct_func
 	float* qMatrix_chroma;
 };
 
-void render_jpeg_func(void* arg)
+thread_pool_func(render_jpeg_func, arg)
 {
 	jpeg_steps_struct_func* jssf = (jpeg_steps_struct_func*)arg;
 
@@ -552,11 +562,11 @@ uint8_t** Encode(uint8_t** image_converted, float* qMatrix_luma, float* qMatrix_
 	result[1] = new uint8_t[mheight * mwidth]{};
 	result[2] = new uint8_t[mheight * mwidth]{};
 
-	int threads = 0;
+	int cpu_threads = 0;
 	if (usethreads)
 	{
-		threads = get_cpu_threads();
-		if (threads <= 1)
+		cpu_threads = get_cpu_threads();
+		if (cpu_threads <= 1)
 		{
 			usethreads = false;
 		}
@@ -564,7 +574,7 @@ uint8_t** Encode(uint8_t** image_converted, float* qMatrix_luma, float* qMatrix_
 
 	if (usethreads)
 	{
-		thread_pool* threadpool = thread_pool_create(threads);
+		thread_pool* threadpool = thread_pool_create(cpu_threads);
 
 		for (int by = 0; by < mheight; by += block_size)
 		{
@@ -601,7 +611,6 @@ uint8_t** Encode(uint8_t** image_converted, float* qMatrix_luma, float* qMatrix_
 			}
 		}
 
-		thread_pool_wait(threadpool);
 		thread_pool_destroy(threadpool);
 	}
 	else

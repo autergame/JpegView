@@ -37,16 +37,6 @@
 
 #include <vector>
 
-template <class T>
-void deletemod(T** ptr)
-{
-	if (*ptr != nullptr)
-	{
-		free(*ptr);
-		*ptr = nullptr;
-	}
-}
-
 #include "ThreadPool.h"
 #include "JpegView.h"
 #include "sha512.h"

@@ -330,7 +330,7 @@ struct jpeg_steps_struct_quad_load
 	float* qMatrix_chroma;
 };
 
-void render_quadtree_jpeg_load(void* arg)
+thread_pool_func(render_quadtree_jpeg_load, arg)
 {
 	jpeg_steps_struct_quad_load* jssq = (jpeg_steps_struct_quad_load*)arg;
 
@@ -618,7 +618,6 @@ uint8_t* loadquad(char* filename, int* width, int* height, bool usethreads, bool
 					thread_pool_add_work(threadpool, render_quadtree_jpeg_load, jssq);
 				}
 
-				thread_pool_wait(threadpool);
 				thread_pool_destroy(threadpool);
 			}
 			else
@@ -768,7 +767,7 @@ struct jpeg_steps_struct_quad
 	float* qMatrix_chroma;
 };
 
-void render_quadtree_jpeg_func(void* arg)
+thread_pool_func(render_quadtree_jpeg_func, arg)
 {
 	jpeg_steps_struct_quad* jssq = (jpeg_steps_struct_quad*)arg;
 
@@ -864,11 +863,11 @@ std::vector<quadnode*> render_quadtree_jpeg(quadnode** rootquad, JpegView* jpeg,
 	result[1] = new uint8_t[mheight * mwidth]{};
 	result[2] = new uint8_t[mheight * mwidth]{};
 
-	int threads = 0;
+	int cpu_threads = 0;
 	if (usethreads)
 	{
-		threads = get_cpu_threads();
-		if (threads <= 1)
+		cpu_threads = get_cpu_threads();
+		if (cpu_threads <= 1)
 		{
 			usethreads = false;
 		}
@@ -876,7 +875,7 @@ std::vector<quadnode*> render_quadtree_jpeg(quadnode** rootquad, JpegView* jpeg,
 
 	if (usethreads)
 	{
-		thread_pool* threadpool = thread_pool_create(threads);
+		thread_pool* threadpool = thread_pool_create(cpu_threads);
 
 		for (uint32_t i = 0; i < listquad.size(); i++)
 		{
@@ -915,7 +914,6 @@ std::vector<quadnode*> render_quadtree_jpeg(quadnode** rootquad, JpegView* jpeg,
 			thread_pool_add_work(threadpool, render_quadtree_jpeg_func, jssq);
 		}
 
-		thread_pool_wait(threadpool);
 		thread_pool_destroy(threadpool);
 	}
 	else
