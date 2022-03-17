@@ -5,6 +5,9 @@
 #include <stdbool.h>
 #include <windows.h>
 #include <synchapi.h>
+#include <winternl.h>
+
+#pragma comment(lib, "ntdll")
 
 
 typedef struct thread_pool_
@@ -18,46 +21,81 @@ typedef struct thread_pool_
     void CALLBACK function_name(PTP_CALLBACK_INSTANCE instance, PVOID arg_var_name, PTP_WORK work)
 
 
+int get_cpu_threads()
+{
+    //SYSTEM_INFO sys_info;
+    //GetSystemInfo(&sys_info);
+    //return sys_info.dwNumberOfProcessors;
+
+    SYSTEM_BASIC_INFORMATION sys_basic_info;
+    NTSTATUS status = NtQuerySystemInformation(SystemBasicInformation,
+        &sys_basic_info, sizeof(SYSTEM_BASIC_INFORMATION), NULL);
+
+    if (!NT_SUCCESS(status))
+    {
+        return 2;
+    }
+    else
+    {
+        int cpu_threads = sys_basic_info.NumberOfProcessors;
+        if (cpu_threads <= 0)
+        {
+            return 2;
+        }
+        else
+        {
+            return cpu_threads;
+        }
+    }
+}
+
 thread_pool* thread_pool_create(int cpu_threads)
 {
     thread_pool* tp = (thread_pool*)calloc(1, sizeof(thread_pool));
 
-    InitializeThreadpoolEnvironment(&tp->callback_environ);
+    if (tp)
+    {
+        if (cpu_threads <= 0)
+        {
+            cpu_threads = get_cpu_threads();
+        }
 
-    tp->pool = CreateThreadpool(NULL);
+        InitializeThreadpoolEnvironment(&tp->callback_environ);
 
-    SetThreadpoolThreadMinimum(tp->pool, cpu_threads);
-    SetThreadpoolThreadMaximum(tp->pool, cpu_threads);
+        tp->pool = CreateThreadpool(NULL);
 
-    tp->cleanup_group = CreateThreadpoolCleanupGroup();
+        SetThreadpoolThreadMinimum(tp->pool, cpu_threads);
+        SetThreadpoolThreadMaximum(tp->pool, cpu_threads);
 
-    SetThreadpoolCallbackPool(&tp->callback_environ, tp->pool);
-    SetThreadpoolCallbackCleanupGroup(&tp->callback_environ, tp->cleanup_group, NULL);
+        tp->cleanup_group = CreateThreadpoolCleanupGroup();
+
+        SetThreadpoolCallbackPool(&tp->callback_environ, tp->pool);
+        SetThreadpoolCallbackCleanupGroup(&tp->callback_environ, tp->cleanup_group, NULL);
+    }
 
     return tp;
 }
 
 void thread_pool_add_work(thread_pool* tp, PTP_WORK_CALLBACK function, void* arg_var)
 {
-    PTP_WORK work = CreateThreadpoolWork(function, arg_var, &tp->callback_environ);
-    SubmitThreadpoolWork(work);
+    if (tp)
+    {
+        PTP_WORK work = CreateThreadpoolWork(function, arg_var, &tp->callback_environ);
+        SubmitThreadpoolWork(work);
+    }
 }
 
 void thread_pool_destroy(thread_pool* tp)
 {
-    CloseThreadpoolCleanupGroupMembers(tp->cleanup_group, FALSE, NULL);
-    CloseThreadpoolCleanupGroup(tp->cleanup_group);
+    if (tp)
+    {
+        CloseThreadpoolCleanupGroupMembers(tp->cleanup_group, FALSE, NULL);
+        CloseThreadpoolCleanupGroup(tp->cleanup_group);
 
-    DestroyThreadpoolEnvironment(&tp->callback_environ);
+        DestroyThreadpoolEnvironment(&tp->callback_environ);
 
-    CloseThreadpool(tp->pool);
+        CloseThreadpool(tp->pool);
 
-    free(tp);
-}
-
-int get_cpu_threads()
-{
-    SYSTEM_INFO sys_info;
-    GetSystemInfo(&sys_info);
-    return sys_info.dwNumberOfProcessors;
+        free(tp);
+    }
 }
