@@ -1,95 +1,117 @@
 // GENERATED CODE
 // FDCT IDCT 8x8
 
-inline void fdct_1d_8x8(float *dst, const float *src,
-	int dst_stridea, int dst_strideb, int src_stridea, int src_strideb)
+inline void fdct_1d_8x8(const float* src, float *dst, int stridea, int strideb)
 {
+	static const float v_0 =  1.175876f;
+	static const float v_1 =  0.353553f;
+	static const float v_2 = -0.785695f;
+	static const float v_3 =  0.707107f;
+	static const float v_4 =  0.785695f;
+	static const float v_5 =  0.461940f;
+	static const float v_6 =  0.191342f;
+	static const float v_7 =  0.275899f;
+	static const float v_8 =  1.387040f;
+
 	for (int i = 0; i < 8; i++)
 	{
-		const float x00 = src[0 * src_stridea] + src[7 * src_stridea];
-		const float x01 = src[1 * src_stridea] + src[6 * src_stridea];
-		const float x02 = src[2 * src_stridea] + src[5 * src_stridea];
-		const float x03 = src[3 * src_stridea] + src[4 * src_stridea];
-		const float x04 = src[0 * src_stridea] - src[7 * src_stridea];
-		const float x05 = src[1 * src_stridea] - src[6 * src_stridea];
-		const float x06 = src[2 * src_stridea] - src[5 * src_stridea];
-		const float x07 = src[3 * src_stridea] - src[4 * src_stridea];
-		const float x08 = x00 + x03;
-		const float x09 = x01 + x02;
-		const float x0a = x00 - x03;
-		const float x0b = x01 - x02;
-		const float x0c =  1.387040f * x04 +  0.275899f * x07;
-		const float x0d =  1.175876f * x05 +  0.785695f * x06;
-		const float x0e = -0.785695f * x05 +  1.175876f * x06;
-		const float x0f =  0.275899f * x04 -  1.387040f * x07;
-		const float x10 =  0.353553f * (x0c - x0d);
-		const float x11 =  0.353553f * (x0e - x0f);
-		dst[0 * dst_stridea] =  0.353553f * (x08 + x09);
-		dst[1 * dst_stridea] =  0.353553f * (x0c + x0d);
-		dst[2 * dst_stridea] =  0.461940f * x0a +  0.191342f * x0b;
-		dst[3 * dst_stridea] =  0.707107f * (x10 - x11);
-		dst[4 * dst_stridea] =  0.353553f * (x08 - x09);
-		dst[5 * dst_stridea] =  0.707107f * (x10 + x11);
-		dst[6 * dst_stridea] =  0.191342f * x0a -  0.461940f * x0b;
-		dst[7 * dst_stridea] =  0.353553f * (x0e + x0f);
-		dst += dst_strideb;
-		src += src_strideb;
+		const float x_00 = src[0 * stridea] + src[7 * stridea];
+		const float x_01 = src[1 * stridea] + src[6 * stridea];
+		const float x_02 = src[2 * stridea] + src[5 * stridea];
+		const float x_03 = src[3 * stridea] + src[4 * stridea];
+		const float x_04 = src[0 * stridea] - src[7 * stridea];
+		const float x_05 = src[1 * stridea] - src[6 * stridea];
+		const float x_06 = src[2 * stridea] - src[5 * stridea];
+		const float x_07 = src[3 * stridea] - src[4 * stridea];
+		const float x_08 = x_00 + x_03;
+		const float x_09 = x_01 + x_02;
+		const float x_0A = x_00 - x_03;
+		const float x_0B = x_01 - x_02;
+		const float x_0C = v_8 * x_04 + v_7 * x_07;
+		const float x_0D = v_0 * x_05 + v_4 * x_06;
+		const float x_0E = v_2 * x_05 + v_0 * x_06;
+		const float x_0F = v_7 * x_04 - v_8 * x_07;
+		const float x_10 = v_1 * (x_0C - x_0D);
+		const float x_11 = v_1 * (x_0E - x_0F);
+		dst[0 * stridea] = v_1 * (x_08 + x_09);
+		dst[1 * stridea] = v_1 * (x_0C + x_0D);
+		dst[2 * stridea] = v_5 * x_0A + v_6 * x_0B;
+		dst[3 * stridea] = v_3 * (x_10 - x_11);
+		dst[4 * stridea] = v_1 * (x_08 - x_09);
+		dst[5 * stridea] = v_3 * (x_10 + x_11);
+		dst[6 * stridea] = v_6 * x_0A - v_5 * x_0B;
+		dst[7 * stridea] = v_1 * (x_0E + x_0F);
+		dst += strideb;
+		src += strideb;
 	}
 }
 
-void fdct_8x8(float *dst, const float *src)
+void fdct_8x8(const float* src, float *dst)
 {
-	float* tmp = (float*)calloc(8 * 8, 4);
-	fdct_1d_8x8(tmp, src, 1, 8, 1, 8);
-	fdct_1d_8x8(dst, tmp, 8, 1, 8, 1);
+	float* tmp = (float*)calloc(8 * 8, sizeof(float));
+	fdct_1d_8x8(src, tmp, 1, 8);
+	fdct_1d_8x8(tmp, dst, 8, 1);
 	free(tmp);
 }
 
-inline void idct_1d_8x8(float *dst, const float *src,
-	int dst_stridea, int dst_strideb, int src_stridea, int src_strideb)
+inline void idct_1d_8x8(const float* src, float *dst, int stridea, int strideb)
 {
+	static const float v_0 = -0.275899f;
+	static const float v_1 =  1.175876f;
+	static const float v_2 =  0.353553f;
+	static const float v_3 = -0.785695f;
+	static const float v_4 =  1.306563f;
+	static const float v_5 =  0.785695f;
+	static const float v_6 =  0.250000f;
+	static const float v_7 =  0.500000f;
+	static const float v_8 =  0.707107f;
+	static const float v_9 =  0.275899f;
+	static const float v_A =  1.414214f;
+	static const float v_B =  0.541196f;
+	static const float v_C =  1.387040f;
+
 	for (int i = 0; i < 8; i++)
 	{
-		const float x00 =  1.414214f * src[0 * src_stridea];
-		const float x01 =  1.387040f * src[1 * src_stridea] +  0.275899f * src[7 * src_stridea];
-		const float x02 =  1.306563f * src[2 * src_stridea] +  0.541196f * src[6 * src_stridea];
-		const float x03 =  1.175876f * src[3 * src_stridea] +  0.785695f * src[5 * src_stridea];
-		const float x04 =  1.414214f * src[4 * src_stridea];
-		const float x05 = -0.785695f * src[3 * src_stridea] +  1.175876f * src[5 * src_stridea];
-		const float x06 =  0.541196f * src[2 * src_stridea] -  1.306563f * src[6 * src_stridea];
-		const float x07 = -0.275899f * src[1 * src_stridea] +  1.387040f * src[7 * src_stridea];
-		const float x09 = x00 + x04;
-		const float x0a = x01 + x03;
-		const float x0b =  1.414214f * x02;
-		const float x0c = x00 - x04;
-		const float x0d = x01 - x03;
-		const float x0e =  0.353553f * (x09 - x0b);
-		const float x0f =  0.353553f * (x0c + x0d);
-		const float x10 =  0.353553f * (x0c - x0d);
-		const float x11 =  1.414214f * x06;
-		const float x12 = x05 + x07;
-		const float x13 = x05 - x07;
-		const float x14 =  0.353553f * (x11 + x12);
-		const float x15 =  0.353553f * (x11 - x12);
-		const float x16 =  0.500000f * x13;
-		const float x08 = -x15;
-		dst[0 * dst_stridea] =  0.250000f * (x09 + x0b) +  0.353553f * x0a;
-		dst[1 * dst_stridea] =  0.707107f * (x0f - x08);
-		dst[2 * dst_stridea] =  0.707107f * (x0f + x08);
-		dst[3 * dst_stridea] =  0.707107f * (x0e + x16);
-		dst[4 * dst_stridea] =  0.707107f * (x0e - x16);
-		dst[5 * dst_stridea] =  0.707107f * (x10 - x14);
-		dst[6 * dst_stridea] =  0.707107f * (x10 + x14);
-		dst[7 * dst_stridea] =  0.250000f * (x09 + x0b) -  0.353553f * x0a;
-		dst += dst_strideb;
-		src += src_strideb;
+		const float x_00 = v_A * src[0 * stridea];
+		const float x_01 = v_C * src[1 * stridea] + v_9 * src[7 * stridea];
+		const float x_02 = v_4 * src[2 * stridea] + v_B * src[6 * stridea];
+		const float x_03 = v_1 * src[3 * stridea] + v_5 * src[5 * stridea];
+		const float x_04 = v_A * src[4 * stridea];
+		const float x_05 = v_3 * src[3 * stridea] + v_1 * src[5 * stridea];
+		const float x_06 = v_B * src[2 * stridea] - v_4 * src[6 * stridea];
+		const float x_07 = v_0 * src[1 * stridea] + v_C * src[7 * stridea];
+		const float x_09 = x_00 + x_04;
+		const float x_0A = x_01 + x_03;
+		const float x_0B = v_A * x_02;
+		const float x_0C = x_00 - x_04;
+		const float x_0D = x_01 - x_03;
+		const float x_0E = v_2 * (x_09 - x_0B);
+		const float x_0F = v_2 * (x_0C + x_0D);
+		const float x_10 = v_2 * (x_0C - x_0D);
+		const float x_11 = v_A * x_06;
+		const float x_12 = x_05 + x_07;
+		const float x_13 = x_05 - x_07;
+		const float x_14 = v_2 * (x_11 + x_12);
+		const float x_15 = v_2 * (x_11 - x_12);
+		const float x_16 = v_7 * x_13;
+		const float x_08 = -x_15;
+		dst[0 * stridea] = v_6 * (x_09 + x_0B) + v_2 * x_0A;
+		dst[1 * stridea] = v_8 * (x_0F - x_08);
+		dst[2 * stridea] = v_8 * (x_0F + x_08);
+		dst[3 * stridea] = v_8 * (x_0E + x_16);
+		dst[4 * stridea] = v_8 * (x_0E - x_16);
+		dst[5 * stridea] = v_8 * (x_10 - x_14);
+		dst[6 * stridea] = v_8 * (x_10 + x_14);
+		dst[7 * stridea] = v_6 * (x_09 + x_0B) - v_2 * x_0A;
+		dst += strideb;
+		src += strideb;
 	}
 }
 
-void idct_8x8(float *dst, const float *src)
+void idct_8x8(const float* src, float *dst)
 {
-	float* tmp = (float*)calloc(8 * 8, 4);
-	idct_1d_8x8(tmp, src, 1, 8, 1, 8);
-	idct_1d_8x8(dst, tmp, 8, 1, 8, 1);
+	float* tmp = (float*)calloc(8 * 8, sizeof(float));
+	idct_1d_8x8(src, tmp, 1, 8);
+	idct_1d_8x8(tmp, dst, 8, 1);
 	free(tmp);
 }

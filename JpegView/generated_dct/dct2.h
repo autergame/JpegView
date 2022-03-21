@@ -1,42 +1,44 @@
 // GENERATED CODE
 // FDCT IDCT 2x2
 
-inline void fdct_1d_2x2(float *dst, const float *src,
-	int dst_stridea, int dst_strideb, int src_stridea, int src_strideb)
+inline void fdct_1d_2x2(const float* src, float *dst, int stridea, int strideb)
 {
+	static const float v_0 = 0.707107f;
+
 	for (int i = 0; i < 2; i++)
 	{
-		dst[0 * dst_stridea] =  0.707107f * src[0 * src_stridea] +  0.707107f * src[1 * src_stridea];
-		dst[1 * dst_stridea] =  0.707107f * src[0 * src_stridea] -  0.707107f * src[1 * src_stridea];
-		dst += dst_strideb;
-		src += src_strideb;
+		dst[0 * stridea] = v_0 * (src[0 * stridea] + src[1 * stridea]);
+		dst[1 * stridea] = v_0 * (src[0 * stridea] - src[1 * stridea]);
+		dst += strideb;
+		src += strideb;
 	}
 }
 
-void fdct_2x2(float *dst, const float *src)
+void fdct_2x2(const float* src, float *dst)
 {
-	float* tmp = (float*)calloc(2 * 2, 4);
-	fdct_1d_2x2(tmp, src, 1, 2, 1, 2);
-	fdct_1d_2x2(dst, tmp, 2, 1, 2, 1);
+	float* tmp = (float*)calloc(2 * 2, sizeof(float));
+	fdct_1d_2x2(src, tmp, 1, 2);
+	fdct_1d_2x2(tmp, dst, 2, 1);
 	free(tmp);
 }
 
-inline void idct_1d_2x2(float *dst, const float *src,
-	int dst_stridea, int dst_strideb, int src_stridea, int src_strideb)
+inline void idct_1d_2x2(const float* src, float *dst, int stridea, int strideb)
 {
+	static const float v_0 = 0.707107f;
+
 	for (int i = 0; i < 2; i++)
 	{
-		dst[0 * dst_stridea] =  0.707107f * src[0 * src_stridea] +  0.707107f * src[1 * src_stridea];
-		dst[1 * dst_stridea] =  0.707107f * src[0 * src_stridea] -  0.707107f * src[1 * src_stridea];
-		dst += dst_strideb;
-		src += src_strideb;
+		dst[0 * stridea] = v_0 * (src[0 * stridea] + src[1 * stridea]);
+		dst[1 * stridea] = v_0 * (src[0 * stridea] - src[1 * stridea]);
+		dst += strideb;
+		src += strideb;
 	}
 }
 
-void idct_2x2(float *dst, const float *src)
+void idct_2x2(const float* src, float *dst)
 {
-	float* tmp = (float*)calloc(2 * 2, 4);
-	idct_1d_2x2(tmp, src, 1, 2, 1, 2);
-	idct_1d_2x2(dst, tmp, 2, 1, 2, 1);
+	float* tmp = (float*)calloc(2 * 2, sizeof(float));
+	idct_1d_2x2(src, tmp, 1, 2);
+	idct_1d_2x2(tmp, dst, 2, 1);
 	free(tmp);
 }

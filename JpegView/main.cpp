@@ -143,7 +143,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 	int subsampling_index = 0, block_size_index = 2;
 
 	const char* block_size_items[] = {
-		"2", "4", "8", "16", "32", "64", "128", "256"
+		"2", "4", "8", "16", "32", "64", "128", "256", "512"
 	};
 	const char* subsampling_items[] = { 
 		"4:4:4", "4:4:0", "4:2:2", "4:2:0", "4:1:1", "4:1:0"

@@ -9,8 +9,10 @@
 #include "generated_dct/dct64.h"
 #include "generated_dct/dct128.h"
 #include "generated_dct/dct256.h"
+#include "generated_dct/dct512.h"
 
-typedef void (*function_dct)(float*, const float*);
+
+typedef void (*function_dct)(const float*, float*);
 
 function_dct functions_fdct[] = {
 	&fdct_2x2,
@@ -20,7 +22,8 @@ function_dct functions_fdct[] = {
 	&fdct_32x32,
 	&fdct_64x64,
 	&fdct_128x128,
-	&fdct_256x256
+	&fdct_256x256,
+	&fdct_512x512
 };
 
 function_dct functions_idct[] = {
@@ -31,7 +34,8 @@ function_dct functions_idct[] = {
 	&idct_32x32,
 	&idct_64x64,
 	&idct_128x128,
-	&idct_256x256
+	&idct_256x256,
+	&idct_512x512
 };
 
 template <class T>
@@ -361,7 +365,7 @@ void DCT_function(jpeg_steps_struct* jss, uint8_t* image_converted)
 				jss->image_block[index] = (image_converted[indeximage] - 128.f);
 			}
 		}
-		functions_fdct[jss->block_size_index](jss->DCTMatrix, jss->image_block);
+		functions_fdct[jss->block_size_index](jss->image_block, jss->DCTMatrix);
 	}
 	else
 	{
@@ -394,7 +398,7 @@ void inverse_DCT_function(jpeg_steps_struct* jss, uint8_t* result)
 {
 	if (jss->usefastdct)
 	{
-		functions_idct[jss->block_size_index](jss->image_block, jss->DCTMatrix);
+		functions_idct[jss->block_size_index](jss->DCTMatrix, jss->image_block);
 		for (int y = 0; y < jss->block_size; y++)
 		{
 			for (int x = 0; x < jss->block_size; x++)
@@ -1003,7 +1007,6 @@ void render_jpeg(JpegView* jpeg, int block_size, int quality, bool qtablege,
 		qMatrix_luma = generate_QMatrix_nofactor(qMatrix_luma_const, jpeg->block_size, qtablege);
 		qMatrix_chroma = generate_QMatrix_nofactor(qMatrix_chroma_const, jpeg->block_size, qtablege);
 	}
-
 
 	uint8_t** image_convertedmodified = Encode(jpeg->image_converted, qMatrix_luma, qMatrix_chroma,
 		jpeg->block_size, block_size_index, jpeg->mwidth, jpeg->mheight, jpeg->compression_rate,
