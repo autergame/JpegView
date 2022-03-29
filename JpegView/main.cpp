@@ -40,6 +40,7 @@
 #include "ThreadPool.h"
 #include "JpegView.h"
 #include "sha512.h"
+#include "miniz.h"
 #include "QuadTree.h"
 
 double GetTimeSinceStart(LARGE_INTEGER Frequencye, LARGE_INTEGER Starte)
@@ -118,6 +119,9 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 
 	float zoomvmax = 100.f;
 	float magnifiersizemax = 1000.f;
+
+	bool vsync = true;
+	glfwSwapInterval(vsync);
 
 	bool usezoom = true;
 	bool jpegcomp = true;
@@ -312,6 +316,9 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 							MessageBoxA(nullptr, "Error in saving the image", "ERROR", MB_OK | MB_ICONERROR | MB_TOPMOST);
 					}
 				}
+				ImGui::SameLine();
+				if (ImGui::Checkbox("Enable Vsync", &vsync))
+					glfwSwapInterval(vsync);
 			}
 			ImGui::EndMenuBar();
 		}

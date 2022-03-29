@@ -239,7 +239,7 @@ int savequad(char* filename, std::vector<quadnode*>& listquad,
 		}	
 
 		uint8_t sha512qnj[64] = { 0 };
-		sha512((uint8_t*)qnsarray, sizeof(quadnodesimple) * quadlistsize, sha512qnj);
+		sha512((const uint8_t*)qnsarray, sizeof(quadnodesimple) * quadlistsize, sha512qnj);
 		fwrite(sha512qnj, 64, 1, filequad);
 
 		const char* qnsstart = "SQNS";
@@ -273,9 +273,10 @@ int savequad(char* filename, std::vector<quadnode*>& listquad,
 			qnjarray[i].block_size = (uint8_t)log2i(quad->width_block_size);
 			quadblocksizemax += quad->width_block_size * quad->height_block_size * 3;
 		}
+		uint32_t quadblocksizemaxbytes = quadblocksizemax * 2;
 
 		uint8_t sha512qnj[64] = { 0 };
-		sha512((uint8_t*)qnjarray, sizeof(quadnodejpeg) * quadlistsize, sha512qnj);
+		sha512((const uint8_t*)qnjarray, sizeof(quadnodejpeg) * quadlistsize, sha512qnj);
 		fwrite(sha512qnj, 64, 1, filequad);
 
 		const char* qnjstart = "SQNJ";
@@ -290,30 +291,35 @@ int savequad(char* filename, std::vector<quadnode*>& listquad,
 
 		fwrite(&quadblocksizemax, 4, 1, filequad);
 
-		int index = 0;
 		int16_t* dctmzzarray = new int16_t[quadblocksizemax]{};
-		for (uint32_t i = 0; i < quadlistsize; i++)
+		for (uint32_t i = 0, x = 0; i < quadlistsize; i++)
 		{
 			quadnode* quad = listquad[i];
 
 			for (int j = 0; j < 3; j++)
 				for (int k = 0; k < quad->width_block_size * quad->height_block_size; k++)
-					dctmzzarray[index++] = quad->DCTMatrix_zigzag[j][k];
+					dctmzzarray[x++] = quad->DCTMatrix_zigzag[j][k];
 		}
 
 		uint8_t sha512dctzz[64] = { 0 };
-		sha512((uint8_t*)dctmzzarray, quadblocksizemax * 2, sha512dctzz);
+		sha512((const uint8_t*)dctmzzarray, quadblocksizemaxbytes, sha512dctzz);
 		fwrite(sha512dctzz, 64, 1, filequad);
 
 		const char* dctzzstart = "SDCT";
 		fwrite(dctzzstart, 4, 1, filequad);
 
-		fwrite(dctmzzarray, 2, quadblocksizemax, filequad);
+		mz_ulong compresslen = mz_compressBound(quadblocksizemaxbytes);
+		uint8_t* compressdata = new uint8_t[compresslen];
+		mz_compress(compressdata, &compresslen, (const unsigned char*)dctmzzarray, quadblocksizemaxbytes);
+
+		fwrite(&compresslen, 4, 1, filequad);
+		fwrite(compressdata, 1, compresslen, filequad);
 
 		const char* dctzzend = "EDCT";
 		fwrite(dctzzend, 4, 1, filequad);
 
 		deletemod(&dctmzzarray);
+		deletemod(&compressdata);
 	}
 
 	fclose(filequad);
@@ -406,7 +412,7 @@ uint8_t* loadquad(char* filename, int* width, int* height, bool usethreads, bool
 				return nullptr;
 
 			uint8_t sha512qnstest[64] = { 0 };
-			sha512((uint8_t*)qnsarray, sizeof(quadnodesimple) * quadlistsize, sha512qnstest);
+			sha512((const uint8_t*)qnsarray, sizeof(quadnodesimple) * quadlistsize, sha512qnstest);
 
 			if (memcmp(sha512qnstest, sha512qns, 64) != 0)
 				return nullptr;
@@ -465,7 +471,7 @@ uint8_t* loadquad(char* filename, int* width, int* height, bool usethreads, bool
 				return nullptr;
 
 			uint8_t sha512qnstest[64] = { 0 };
-			sha512((uint8_t*)qnjarray, sizeof(quadnodejpeg) * quadlistsize, sha512qnstest);
+			sha512((const uint8_t*)qnjarray, sizeof(quadnodejpeg) * quadlistsize, sha512qnstest);
 
 			if (memcmp(sha512qnstest, sha512qnj, 64) != 0)
 				return nullptr;
@@ -482,8 +488,17 @@ uint8_t* loadquad(char* filename, int* width, int* height, bool usethreads, bool
 			if (strcmp(dctmzzstart, "SDCT") != 0)
 				return nullptr;
 
-			int16_t* dctmzzarray = new int16_t[quadblocksizemax] {};
-			fread(dctmzzarray, 2, quadblocksizemax, filequad);
+			mz_ulong compresslen = 0;
+			fread(&compresslen, 4, 1, filequad);
+
+			uint8_t* compressdata = new uint8_t[compresslen];
+			fread(compressdata, 1, compresslen, filequad);
+
+			mz_ulong uncompresslen = quadblocksizemax * 2;
+			int16_t* dctmzzarray = new int16_t[quadblocksizemax]{};
+			mz_uncompress((unsigned char*)dctmzzarray, &uncompresslen, (const unsigned char*)compressdata, compresslen);
+
+			deletemod(&compressdata);
 
 			char dctmzzend[5] = { '\0' };
 			fread(dctmzzend, 4, 1, filequad);
@@ -492,7 +507,7 @@ uint8_t* loadquad(char* filename, int* width, int* height, bool usethreads, bool
 				return nullptr;
 
 			uint8_t sha512dctmzztest[64] = { 0 };
-			sha512((uint8_t*)dctmzzarray, quadblocksizemax * 2, sha512dctmzztest);
+			sha512((const uint8_t*)dctmzzarray, quadblocksizemax * 2, sha512dctmzztest);
 
 			if (memcmp(sha512dctmzztest, sha512dctzz, 64) != 0)
 				return nullptr;

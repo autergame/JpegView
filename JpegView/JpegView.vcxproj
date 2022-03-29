@@ -162,6 +162,7 @@
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="miniz.h" />
     <ClInclude Include="sha512.h" />
     <ClInclude Include="JpegView.h" />
     <ClInclude Include="QuadTree.h" />
