@@ -326,21 +326,21 @@ struct jpeg_steps_struct
 	float Q_control;
 };
 
-int16_t* ZigZag_function(jpeg_steps_struct* jss)
+int32_t* ZigZag_function(jpeg_steps_struct* jss)
 {
-	int16_t* DCTMatrix_zigzag = new int16_t[jss->block_size * jss->block_size]{};
+	int32_t* DCTMatrix_zigzag = new int32_t[jss->block_size * jss->block_size]{};
 	for (int y = 0; y < jss->block_size; y++)
 	{
 		for (int x = 0; x < jss->block_size; x++)
 		{
 			int index = y * jss->block_size + x;
-			DCTMatrix_zigzag[jss->ZigZagtable[index]] = (int16_t)jss->DCTMatrix[index];
+			DCTMatrix_zigzag[jss->ZigZagtable[index]] = (int32_t)jss->DCTMatrix[index];
 		}
 	}
 	return DCTMatrix_zigzag;
 }
 
-void DeZigZag_function(jpeg_steps_struct* jss, int16_t* DCTMatrix_zigzag)
+void DeZigZag_function(jpeg_steps_struct* jss, int32_t* DCTMatrix_zigzag)
 {
 	for (int y = 0; y < jss->block_size; y++)
 	{
@@ -503,18 +503,18 @@ void JPEG_steps(jpeg_steps_struct* jss, uint8_t* result, uint8_t* image_converte
 	inverse_DCT_function(jss, result);
 }
 
-void Quad_JPEG_steps_decompress_load(jpeg_steps_struct* jss, uint8_t* result, float* qMatrix, int16_t* DCTMatrix_zigzag)
+void Quad_JPEG_steps_decompress_load(jpeg_steps_struct* jss, uint8_t* result, float* qMatrix, int32_t* DCTMatrix_zigzag)
 {
 	DeZigZag_function(jss, DCTMatrix_zigzag);
 	DeQuantize_function(jss, qMatrix);
 	inverse_DCT_function(jss, result);
 }
 
-int16_t* Quad_JPEG_steps(jpeg_steps_struct* jss, uint8_t* result, uint8_t* image_converted, float* qMatrix)
+int32_t* Quad_JPEG_steps(jpeg_steps_struct* jss, uint8_t* result, uint8_t* image_converted, float* qMatrix)
 {
 	DCT_function(jss, image_converted);
 	Quantize_function(jss, qMatrix);
-	int16_t* DCTMatrix_zigzag = ZigZag_function(jss);
+	int32_t* DCTMatrix_zigzag = ZigZag_function(jss);
 	DeQuantize_function(jss, qMatrix);
 	inverse_DCT_function(jss, result);
 	return DCTMatrix_zigzag;

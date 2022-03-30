@@ -58,11 +58,113 @@ void glfw_error_callback(int error, const char* description)
 	exit(1);
 }
 
+void strip_filepath(char* fname)
+{
+	char* end = fname + strlen(fname);
+	while (end > fname && *end != '\\')
+		--end;
+	if (end > fname)
+		*end = '\0';
+}
+
 int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPSTR lpCmdLine, _In_ int nShowCmd)
 {
 	LARGE_INTEGER Frequencye, Starte;
 	QueryPerformanceFrequency(&Frequencye);
 	QueryPerformanceCounter(&Starte);
+
+	char msgTitle[512] = { '\0' };
+	char openPath[MAX_PATH] = { '\0' };
+	char savePath[MAX_PATH] = { '\0' };
+	char openFile[MAX_PATH] = { '\0' };
+	char saveFile[MAX_PATH] = { '\0' };
+	char openFile_temp[MAX_PATH] = { '\0' };
+
+	char currentPath[MAX_PATH] = { '\0' };
+	GetCurrentDirectoryA(MAX_PATH, currentPath);
+
+	LSTATUS regStatus = 0;
+	HKEY regkeyresult = nullptr;
+	regStatus = RegOpenKeyExA(HKEY_CURRENT_USER, "SOFTWARE\\JpegView", 0, KEY_ALL_ACCESS, &regkeyresult);
+	if (regStatus == ERROR_PATH_NOT_FOUND || regStatus == ERROR_FILE_NOT_FOUND)
+	{
+		regStatus = RegCreateKeyExA(HKEY_CURRENT_USER, "SOFTWARE\\JpegView", 0, nullptr,
+			REG_OPTION_NON_VOLATILE, KEY_WRITE | KEY_QUERY_VALUE, nullptr, &regkeyresult, nullptr);
+		if (regStatus != ERROR_SUCCESS)
+		{
+			sprintf_s(msgTitle, 512, "Creating key failed: %d %d", regStatus, GetLastError());
+			MessageBoxA(nullptr, msgTitle, "ERROR", MB_OK | MB_ICONERROR | MB_TOPMOST);
+			exit(1);
+		}
+	}
+	else if (regStatus != ERROR_SUCCESS)
+	{
+		sprintf_s(msgTitle, 512, "Setting key value failed: %d %d", regStatus, GetLastError());
+		MessageBoxA(nullptr, msgTitle, "ERROR", MB_OK | MB_ICONERROR | MB_TOPMOST);
+		exit(1);
+	}
+
+	DWORD pathSize = MAX_PATH;
+	regStatus = RegGetValueA(HKEY_CURRENT_USER, "SOFTWARE\\JpegView", "openpath",
+		RRF_RT_REG_EXPAND_SZ | RRF_NOEXPAND, nullptr, openPath, &pathSize);
+	if (regStatus == ERROR_FILE_NOT_FOUND || regStatus == ERROR_FILE_NOT_FOUND)
+	{
+		regStatus = RegSetValueExA(regkeyresult, "openpath", 0, REG_EXPAND_SZ, (LPCBYTE)currentPath, MAX_PATH);
+		if (regStatus != ERROR_SUCCESS)
+		{
+			sprintf_s(msgTitle, 512, "Setting key value failed: %d %d", regStatus, GetLastError());
+			MessageBoxA(nullptr, msgTitle, "ERROR", MB_OK | MB_ICONERROR | MB_TOPMOST);
+			exit(1);
+		}
+	}
+	else if (regStatus != ERROR_SUCCESS)
+	{
+		sprintf_s(msgTitle, 512, "Getting key value failed: %d %d", regStatus, GetLastError());
+		MessageBoxA(nullptr, msgTitle, "ERROR", MB_OK | MB_ICONERROR | MB_TOPMOST);
+		exit(1);
+	}
+
+	pathSize = MAX_PATH;
+	regStatus = RegGetValueA(HKEY_CURRENT_USER, "SOFTWARE\\JpegView", "savepath",
+		RRF_RT_REG_EXPAND_SZ | RRF_NOEXPAND, nullptr, savePath, &pathSize);
+	if (regStatus == ERROR_FILE_NOT_FOUND || regStatus == ERROR_FILE_NOT_FOUND)
+	{
+		regStatus = RegSetValueExA(regkeyresult, "savepath", 0, REG_EXPAND_SZ, (LPCBYTE)currentPath, MAX_PATH);
+		if (regStatus != ERROR_SUCCESS)
+		{
+			sprintf_s(msgTitle, 512, "Setting key value failed: %d %d", regStatus, GetLastError());
+			MessageBoxA(nullptr, msgTitle, "ERROR", MB_OK | MB_ICONERROR | MB_TOPMOST);
+			exit(1);
+		}
+	}
+	else if (regStatus != ERROR_SUCCESS)
+	{
+		sprintf_s(msgTitle, 512, "Getting key value failed: %d %d", regStatus, GetLastError());
+		MessageBoxA(nullptr, msgTitle, "ERROR", MB_OK | MB_ICONERROR | MB_TOPMOST);
+		exit(1);
+	}
+
+	pathSize = 4;
+	DWORD vSync = 0;
+	regStatus = RegGetValueA(HKEY_CURRENT_USER, "SOFTWARE\\JpegView", "vsync",
+		RRF_RT_REG_DWORD, nullptr, &vSync, &pathSize);
+	if (regStatus == ERROR_FILE_NOT_FOUND || regStatus == ERROR_FILE_NOT_FOUND)
+	{
+		vSync = 0;
+		regStatus = RegSetValueExA(regkeyresult, "vsync", 0, REG_DWORD, (LPCBYTE)&vSync, 4);
+		if (regStatus != ERROR_SUCCESS)
+		{
+			sprintf_s(msgTitle, 512, "Setting key value failed: %d %d", regStatus, GetLastError());
+			MessageBoxA(nullptr, msgTitle, "ERROR", MB_OK | MB_ICONERROR | MB_TOPMOST);
+			exit(1);
+		}
+	}
+	else if (regStatus != ERROR_SUCCESS)
+	{
+		sprintf_s(msgTitle, 512, "Getting key value failed: %d %d", regStatus, GetLastError());
+		MessageBoxA(nullptr, msgTitle, "ERROR", MB_OK | MB_ICONERROR | MB_TOPMOST);
+		exit(1);
+	}
 
 	RECT rectScreen;
 	HWND hwndScreen = GetDesktopWindow();
@@ -83,7 +185,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 	GLFWwindow* glfwWindow = glfwCreateWindow(windowWidth, windowHeight, "JpegView", nullptr, nullptr);
 
 	glfwMakeContextCurrent(glfwWindow);
-	glfwSwapInterval(0);
+	glfwSwapInterval(vSync);
 
 	glfwSetWindowPos(glfwWindow, windowPosX, windowPosY);
 	gladLoadGL();
@@ -119,9 +221,6 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 
 	float zoomvmax = 100.f;
 	float magnifiersizemax = 1000.f;
-
-	bool vsync = true;
-	glfwSwapInterval(vsync);
 
 	bool usezoom = true;
 	bool jpegcomp = true;
@@ -168,10 +267,6 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 
 	float Deltatime = 0, Lastedtime = 0;
 	char windowTitle[64] = { '\0' };
-
-	char openFile[MAX_PATH] = { '\0' };
-	char saveFile[MAX_PATH] = { '\0' };
-	char openFile_temp[MAX_PATH] = { '\0' };
 
 #define TESTBIN
 #if defined TESTBIN && defined _DEBUG
@@ -224,7 +319,18 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 			{
 				OPENFILENAMEA ofn;
 				memset(&ofn, 0, sizeof(ofn));
+				memset(openPath, 0, MAX_PATH);
 				memset(openFile_temp, 0, MAX_PATH);
+
+				pathSize = MAX_PATH;
+				regStatus = RegGetValueA(HKEY_CURRENT_USER, "SOFTWARE\\JpegView", "openpath",
+					RRF_RT_REG_EXPAND_SZ | RRF_NOEXPAND, nullptr, openPath, &pathSize);
+				if (regStatus != ERROR_SUCCESS)
+				{
+					sprintf_s(msgTitle, 512, "Getting key value failed: %d %d", regStatus, GetLastError());
+					MessageBoxA(nullptr, msgTitle, "ERROR", MB_OK | MB_ICONERROR | MB_TOPMOST);
+					exit(1);
+				}
 
 				ofn.lStructSize = sizeof(ofn);
 				ofn.hwndOwner = glfwWindowNative;
@@ -240,48 +346,66 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 				ofn.nFilterIndex = 1;
 				ofn.lpstrFileTitle = nullptr;
 				ofn.nMaxFileTitle = 0;
-				ofn.lpstrInitialDir = nullptr;
+				ofn.lpstrInitialDir = openPath;
 				ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
 
 				if (GetOpenFileNameA(&ofn) == TRUE)
 				{
-					memset(openFile, 0, MAX_PATH);
-					memcpy(openFile, openFile_temp, MAX_PATH);
-
-					for (size_t i = ofn.nFileExtension; i < strlen(openFile_temp); i++)
-						openFile_temp[i] = tolower(openFile_temp[i]);
-
-					uint8_t* img;
-					if (ofn.nFilterIndex != 5 && strcmp(openFile_temp + ofn.nFileExtension, "qmi") != 0)
-						img = stbi_load(openFile, &swidth, &sheight, &schannels, 3);
-					else
-						img = loadquad(openFile, &swidth, &sheight, usethreads, usefastdct);
-					if (img != nullptr)
+					if (openFile_temp[0] != '\0')
 					{
-						clean_node(&rootquad);
-						if (jpeg != nullptr)
-						{
-							deletemod(&jpeg->original_image);
-							deletemod(&jpeg->final_image);
-							for (int i = 0; i < 3; i++)
-								deletemod(&jpeg->image_converted[i]);
-							deletemod(&jpeg->image_converted);
-							deletemod(&jpeg);
+						memset(openFile, 0, MAX_PATH);
+						memcpy(openFile, openFile_temp, MAX_PATH);
 
-							glDeleteTextures(1, &image_textureo);
-							glDeleteTextures(1, &image_texturef);
-							glDeleteTextures(1, &image_textureo_zoom);
-							glDeleteTextures(1, &image_texturef_zoom);
+						memset(openPath, 0, MAX_PATH);
+						memcpy(openPath, openFile, MAX_PATH);
+						strip_filepath(openPath);
+
+						size_t openPathLen = strlen(openPath);
+
+						regStatus = RegSetValueExA(regkeyresult, "openpath", 0, REG_EXPAND_SZ,
+							(LPCBYTE)openPath, (DWORD)openPathLen);
+						if (regStatus != ERROR_SUCCESS)
+						{
+							sprintf_s(msgTitle, 512, "Setting key value failed: %d %d", regStatus, GetLastError());
+							MessageBoxA(nullptr, msgTitle, "ERROR", MB_OK | MB_ICONERROR | MB_TOPMOST);
+							exit(1);
 						}
 
-						jpeg = init_jpeg(img, swidth, sheight, block_size, useycbcr);
-						image_textureo = create_image(img, swidth, sheight, true);
-						image_texturef = create_image(jpeg->final_image, swidth, sheight, true);
-						image_textureo_zoom = create_image(img, swidth, sheight, false);
-						image_texturef_zoom = create_image(jpeg->final_image, swidth, sheight, false);
+						for (size_t i = ofn.nFileExtension; i < strlen(openFile_temp); i++)
+							openFile_temp[i] = tolower(openFile_temp[i]);
+
+						uint8_t* img;
+						if (ofn.nFilterIndex != 5 && strcmp(openFile_temp + ofn.nFileExtension, "qmi") != 0)
+							img = stbi_load(openFile, &swidth, &sheight, &schannels, 3);
+						else
+							img = loadquad(openFile, &swidth, &sheight, usethreads, usefastdct);
+						if (img != nullptr)
+						{
+							clean_node(&rootquad);
+							if (jpeg != nullptr)
+							{
+								deletemod(&jpeg->original_image);
+								deletemod(&jpeg->final_image);
+								for (int i = 0; i < 3; i++)
+									deletemod(&jpeg->image_converted[i]);
+								deletemod(&jpeg->image_converted);
+								deletemod(&jpeg);
+
+								glDeleteTextures(1, &image_textureo);
+								glDeleteTextures(1, &image_texturef);
+								glDeleteTextures(1, &image_textureo_zoom);
+								glDeleteTextures(1, &image_texturef_zoom);
+							}
+
+							jpeg = init_jpeg(img, swidth, sheight, block_size, useycbcr);
+							image_textureo = create_image(img, swidth, sheight, true);
+							image_texturef = create_image(jpeg->final_image, swidth, sheight, true);
+							image_textureo_zoom = create_image(img, swidth, sheight, false);
+							image_texturef_zoom = create_image(jpeg->final_image, swidth, sheight, false);
+						}
+						else
+							MessageBoxA(nullptr, "Error in loading the image", "ERROR", MB_OK | MB_ICONERROR | MB_TOPMOST);
 					}
-					else
-						MessageBoxA(nullptr, "Error in loading the image", "ERROR", MB_OK | MB_ICONERROR | MB_TOPMOST);
 				}
 			}
 			if (openFile[0] != '\0')
@@ -291,6 +415,17 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 					OPENFILENAMEA ofn;
 					memset(&ofn, 0, sizeof(ofn));
 					memset(saveFile, 0, MAX_PATH);
+					memset(savePath, 0, MAX_PATH);
+
+					pathSize = MAX_PATH;
+					regStatus = RegGetValueA(HKEY_CURRENT_USER, "SOFTWARE\\JpegView", "savepath",
+						RRF_RT_REG_EXPAND_SZ | RRF_NOEXPAND, nullptr, savePath, &pathSize);
+					if (regStatus != ERROR_SUCCESS)
+					{
+						sprintf_s(msgTitle, 512, "Getting key value failed: %d %d", regStatus, GetLastError());
+						MessageBoxA(nullptr, msgTitle, "ERROR", MB_OK | MB_ICONERROR | MB_TOPMOST);
+						exit(1);
+					}
 
 					ofn.lStructSize = sizeof(ofn);
 					ofn.hwndOwner = glfwWindowNative;
@@ -302,23 +437,51 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 					ofn.nFilterIndex = 1;
 					ofn.lpstrFileTitle = nullptr;
 					ofn.nMaxFileTitle = 0;
-					ofn.lpstrInitialDir = nullptr;
+					ofn.lpstrInitialDir = savePath;
 					ofn.Flags = OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
 
 					if (GetSaveFileNameA(&ofn) == TRUE)
 					{
-						int saved = 0;
-						if (ofn.nFilterIndex == 1)
-							saved = stbi_write_png(saveFile, jpeg->width, jpeg->height, 3, jpeg->final_image, 0);
-						else if (ofn.nFilterIndex == 2)
-							saved = savequad(saveFile, rootquadlist, jpeg->width, jpeg->height, quality, qtablege, useycbcr);
-						if (!saved)
-							MessageBoxA(nullptr, "Error in saving the image", "ERROR", MB_OK | MB_ICONERROR | MB_TOPMOST);
+						if (openFile[0] != '\0')
+						{				
+							memset(savePath, 0, MAX_PATH);
+							memcpy(savePath, saveFile, MAX_PATH);
+
+							strip_filepath(savePath);
+							size_t savePathLen = strlen(savePath);
+
+							regStatus = RegSetValueExA(regkeyresult, "savepath", 0, REG_EXPAND_SZ,
+								(LPCBYTE)savePath, (DWORD)savePathLen);
+							if (regStatus != ERROR_SUCCESS)
+							{
+								sprintf_s(msgTitle, 512, "Setting key value failed: %d %d", regStatus, GetLastError());
+								MessageBoxA(nullptr, msgTitle, "ERROR", MB_OK | MB_ICONERROR | MB_TOPMOST);
+								exit(1);
+							}
+
+							int saved = 0;
+							if (ofn.nFilterIndex == 1)
+								saved = stbi_write_png(saveFile, jpeg->width, jpeg->height, 3, jpeg->final_image, 0);
+							else if (ofn.nFilterIndex == 2)
+								saved = savequad(saveFile, rootquadlist, jpeg->width, jpeg->height, quality, qtablege, useycbcr);
+							if (!saved)
+								MessageBoxA(nullptr, "Error in saving the image", "ERROR", MB_OK | MB_ICONERROR | MB_TOPMOST);
+						}
 					}
 				}
 				ImGui::SameLine();
-				if (ImGui::Checkbox("Enable Vsync", &vsync))
-					glfwSwapInterval(vsync);
+				if (ImGui::Checkbox("Enable Vsync", (bool*)&vSync))
+				{
+					regStatus = RegSetValueExA(regkeyresult, "vsync", 0, REG_DWORD, (LPCBYTE)&vSync, 4);
+					if (regStatus != ERROR_SUCCESS)
+					{
+						sprintf_s(msgTitle, 512, "Setting key value failed: %d %d", regStatus, GetLastError());
+						MessageBoxA(nullptr, msgTitle, "ERROR", MB_OK | MB_ICONERROR | MB_TOPMOST);
+						exit(1);
+					}
+
+					glfwSwapInterval(vSync);
+				}
 			}
 			ImGui::EndMenuBar();
 		}
@@ -571,6 +734,8 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 
 	glfwDestroyWindow(glfwWindow);
 	glfwTerminate();
+
+	RegCloseKey(regkeyresult);
 
 	return 0;
 }

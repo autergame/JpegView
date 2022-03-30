@@ -35,7 +35,7 @@ struct quadnode
 {
 	float error;
 	uint8_t* image;
-	int16_t* DCTMatrix_zigzag[3];
+	int32_t* DCTMatrix_zigzag[3];
 	int depth, boxl, boxt, boxr, boxb, width_block_size, height_block_size, r, g, b;
 	struct quadnode *children_tl, *children_tr, *children_bl, *children_br;
 };
@@ -273,7 +273,6 @@ int savequad(char* filename, std::vector<quadnode*>& listquad,
 			qnjarray[i].block_size = (uint8_t)log2i(quad->width_block_size);
 			quadblocksizemax += quad->width_block_size * quad->height_block_size * 3;
 		}
-		uint32_t quadblocksizemaxbytes = quadblocksizemax * 2;
 
 		uint8_t sha512qnj[64] = { 0 };
 		sha512((const uint8_t*)qnjarray, sizeof(quadnodejpeg) * quadlistsize, sha512qnj);
@@ -291,7 +290,7 @@ int savequad(char* filename, std::vector<quadnode*>& listquad,
 
 		fwrite(&quadblocksizemax, 4, 1, filequad);
 
-		int16_t* dctmzzarray = new int16_t[quadblocksizemax]{};
+		int32_t* dctmzzarray = new int32_t[quadblocksizemax]{};
 		for (uint32_t i = 0, x = 0; i < quadlistsize; i++)
 		{
 			quadnode* quad = listquad[i];
@@ -300,17 +299,18 @@ int savequad(char* filename, std::vector<quadnode*>& listquad,
 				for (int k = 0; k < quad->width_block_size * quad->height_block_size; k++)
 					dctmzzarray[x++] = quad->DCTMatrix_zigzag[j][k];
 		}
+		uint32_t uncompresslen = quadblocksizemax * 4;
 
 		uint8_t sha512dctzz[64] = { 0 };
-		sha512((const uint8_t*)dctmzzarray, quadblocksizemaxbytes, sha512dctzz);
+		sha512((const uint8_t*)dctmzzarray, uncompresslen, sha512dctzz);
 		fwrite(sha512dctzz, 64, 1, filequad);
 
 		const char* dctzzstart = "SDCT";
 		fwrite(dctzzstart, 4, 1, filequad);
 
-		mz_ulong compresslen = mz_compressBound(quadblocksizemaxbytes);
+		mz_ulong compresslen = mz_compressBound(uncompresslen);
 		uint8_t* compressdata = new uint8_t[compresslen];
-		mz_compress(compressdata, &compresslen, (const unsigned char*)dctmzzarray, quadblocksizemaxbytes);
+		mz_compress2(compressdata, &compresslen, (const unsigned char*)dctmzzarray, uncompresslen, MZ_BEST_COMPRESSION);
 
 		fwrite(&compresslen, 4, 1, filequad);
 		fwrite(compressdata, 1, compresslen, filequad);
@@ -331,7 +331,7 @@ struct jpeg_steps_struct_quad_load
 {
 	jpeg_steps_struct* jss;
 	uint8_t** result;
-	int16_t* dctmzzblocks;
+	int32_t* dctmzzblocks;
 	float* qMatrix_luma;
 	float* qMatrix_chroma;
 };
@@ -340,7 +340,7 @@ thread_pool_function(render_quadtree_jpeg_load, arg_var)
 {
 	jpeg_steps_struct_quad_load* jssq = (jpeg_steps_struct_quad_load*)arg_var;
 
-	int16_t* dctmzzblocks = jssq->dctmzzblocks;
+	int32_t* dctmzzblocks = jssq->dctmzzblocks;
 	jpeg_steps_struct* jss = jssq->jss;
 	uint8_t** result = jssq->result;
 	float* qMatrix_luma = jssq->qMatrix_luma;
@@ -494,8 +494,8 @@ uint8_t* loadquad(char* filename, int* width, int* height, bool usethreads, bool
 			uint8_t* compressdata = new uint8_t[compresslen];
 			fread(compressdata, 1, compresslen, filequad);
 
-			mz_ulong uncompresslen = quadblocksizemax * 2;
-			int16_t* dctmzzarray = new int16_t[quadblocksizemax]{};
+			mz_ulong uncompresslen = quadblocksizemax * 4;
+			int32_t* dctmzzarray = new int32_t[quadblocksizemax]{};
 			mz_uncompress((unsigned char*)dctmzzarray, &uncompresslen, (const unsigned char*)compressdata, compresslen);
 
 			deletemod(&compressdata);
@@ -507,7 +507,7 @@ uint8_t* loadquad(char* filename, int* width, int* height, bool usethreads, bool
 				return nullptr;
 
 			uint8_t sha512dctmzztest[64] = { 0 };
-			sha512((const uint8_t*)dctmzzarray, quadblocksizemax * 2, sha512dctmzztest);
+			sha512((const uint8_t*)dctmzzarray, uncompresslen, sha512dctmzztest);
 
 			if (memcmp(sha512dctmzztest, sha512dctzz, 64) != 0)
 				return nullptr;
@@ -573,7 +573,7 @@ uint8_t* loadquad(char* filename, int* width, int* height, bool usethreads, bool
 			result[2] = new uint8_t[mheight * mwidth]{};
 
 			int indexdctmake = 0;
-			int16_t** dctmzzblocks = new int16_t*[quadlistsize]{};
+			int32_t** dctmzzblocks = new int32_t*[quadlistsize]{};
 			for (uint32_t i = 0; i < quadlistsize; i++)
 			{
 				quadnodejpeg* quad = &qnjarray[i];
@@ -774,7 +774,7 @@ std::vector<quadnode*> render_quadtree(quadnode** rootquad, JpegView* jpeg, int 
 
 struct jpeg_steps_struct_quad
 {
-	int16_t** DCTMatrix_zigzag;
+	int32_t** DCTMatrix_zigzag;
 	jpeg_steps_struct* jss;
 	uint8_t** result;
 	uint8_t** image_converted;
@@ -786,7 +786,7 @@ thread_pool_function(render_quadtree_jpeg_func, arg_var)
 {
 	jpeg_steps_struct_quad* jssq = (jpeg_steps_struct_quad*)arg_var;
 
-	int16_t** DCTMatrix_zigzag = jssq->DCTMatrix_zigzag;
+	int32_t** DCTMatrix_zigzag = jssq->DCTMatrix_zigzag;
 	jpeg_steps_struct* jss = jssq->jss;
 	uint8_t** result = jssq->result;
 	uint8_t** image_converted = jssq->image_converted;
