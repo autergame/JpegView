@@ -7,9 +7,9 @@
 
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "stb_image.h"
+#include <stb/stb_image.h>
 #define __STDC_LIB_EXT1__
-#include "stb_image_write.h"
+#include <stb/stb_image_write.h>
 #undef __STDC_LIB_EXT1__
 
 #include <windows.h>
@@ -224,7 +224,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 
 	bool usezoom = true;
 	bool jpegcomp = true;
-	bool qtablege = true;
+	bool qtablegen = true;
 
 	bool useycbcr = true;
 	bool usethreads = true;
@@ -353,13 +353,10 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 				{
 					if (openFile_temp[0] != '\0')
 					{
-						memset(openFile, 0, MAX_PATH);
 						memcpy(openFile, openFile_temp, MAX_PATH);
-
-						memset(openPath, 0, MAX_PATH);
 						memcpy(openPath, openFile, MAX_PATH);
+						
 						strip_filepath(openPath);
-
 						size_t openPathLen = strlen(openPath);
 
 						regStatus = RegSetValueExA(regkeyresult, "openpath", 0, REG_EXPAND_SZ,
@@ -384,11 +381,14 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 							clean_node(&rootquad);
 							if (jpeg != nullptr)
 							{
-								deletemod(&jpeg->original_image);
 								deletemod(&jpeg->final_image);
+								deletemod(&jpeg->original_image);
+
 								for (int i = 0; i < 3; i++)
 									deletemod(&jpeg->image_converted[i]);
+
 								deletemod(&jpeg->image_converted);
+
 								deletemod(&jpeg);
 
 								glDeleteTextures(1, &image_textureo);
@@ -444,7 +444,6 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 					{
 						if (openFile[0] != '\0')
 						{				
-							memset(savePath, 0, MAX_PATH);
 							memcpy(savePath, saveFile, MAX_PATH);
 
 							strip_filepath(savePath);
@@ -463,7 +462,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 							if (ofn.nFilterIndex == 1)
 								saved = stbi_write_png(saveFile, jpeg->width, jpeg->height, 3, jpeg->final_image, 0);
 							else if (ofn.nFilterIndex == 2)
-								saved = savequad(saveFile, rootquadlist, jpeg->width, jpeg->height, quality, qtablege, useycbcr);
+								saved = savequad(saveFile, rootquadlist, jpeg->width, jpeg->height, quality, qtablegen, useycbcr);
 							if (!saved)
 								MessageBoxA(nullptr, "Error in saving the image", "ERROR", MB_OK | MB_ICONERROR | MB_TOPMOST);
 						}
@@ -499,12 +498,15 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 					if (jpeg != nullptr)
 					{
 						memset(openFile, 0, MAX_PATH);
-
-						deletemod(&jpeg->original_image);
+	
 						deletemod(&jpeg->final_image);
+						deletemod(&jpeg->original_image);
+
 						for (int i = 0; i < 3; i++)
 							deletemod(&jpeg->image_converted[i]);
+
 						deletemod(&jpeg->image_converted);
+
 						deletemod(&jpeg);
 
 						glDeleteTextures(1, &image_textureo);
@@ -538,7 +540,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 				if (ImGui::Combo("##list_block", &block_size_index, block_size_items, IM_ARRAYSIZE(block_size_items)))
 					block_size = 1 << (block_size_index + 1);
 				ImGui::AlignTextToFramePadding();
-				ImGui::Checkbox("Use Generated Quantization Table?", &qtablege);
+				ImGui::Checkbox("Use Generated Quantization Table?", &qtablegen);
 				ImGui::Checkbox("Show Compression Rate?", &jpeg->compression_rate);
 				if (jpeg->compression_rate)
 				{
@@ -648,12 +650,13 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 				{
 					clean_node(&rootquad);
 					rootquadlist = render_quadtree_jpeg(&rootquad, jpeg, max_depth,
-						threshold_error, min_size, max_size, drawline, quality, qtablege, 
+						threshold_error, min_size, max_size, drawline, quality, qtablegen, 
 						subsampling_index, useycbcr, usethreads, usefastdct);
 				}
 				else if (!quadtree && !jpegcomp)
 				{
 					deletemod(&jpeg->final_image);
+
 					if (useycbcr)
 					{
 						render_ycbcr(jpeg, block_size, subsampling_index);
@@ -676,7 +679,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 							min_size, max_size, drawline, quadtreepow2, subsampling_index);
 					}
 					else if (jpegcomp) {
-						render_jpeg(jpeg, block_size, quality, qtablege,
+						render_jpeg(jpeg, block_size, quality, qtablegen,
 							subsampling_index, block_size_index, useycbcr, usethreads, usefastdct);
 					}
 				}
@@ -715,11 +718,14 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 	clean_node(&rootquad);
 	if (jpeg != nullptr)
 	{
-		deletemod(&jpeg->original_image);
 		deletemod(&jpeg->final_image);
+		deletemod(&jpeg->original_image);
+
 		for (int i = 0; i < 3; i++)
+
 			deletemod(&jpeg->image_converted[i]);
 		deletemod(&jpeg->image_converted);
+
 		deletemod(&jpeg);
 
 		glDeleteTextures(1, &image_textureo);

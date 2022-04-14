@@ -2,9 +2,14 @@
 *.pdb
 *.iobj
 *.ipdb
+
 Debug/
 x64/Debug/
 JpegView/Debug/
 JpegView/Release/
 JpegView/x64/Debug/
 JpegView/x64/Release/
+
+debug.log
+GPUCache/
+JpegView/VTune Profiler Results/
