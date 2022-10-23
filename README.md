@@ -1,6 +1,8 @@
 # JpegView
 How To Jpeg DCT quantize and QuadTree Compression Works
 
+# MOVED TO: https://github.com/autergame/JpegView-Rust
+
 ## Help From:
 * https://github.com/yacinemezaguer/JPEGVis
 * https://github.com/leogouttefarde/JPEG
